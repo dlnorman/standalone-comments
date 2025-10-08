@@ -1,0 +1,539 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Comment System Admin - Subscriptions</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background: #f5f5f5;
+            color: #333;
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+
+        header {
+            background: white;
+            padding: 1.5rem 2rem;
+            margin-bottom: 2rem;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        h1 {
+            color: #4a90e2;
+        }
+
+        .nav {
+            display: flex;
+            gap: 1rem;
+        }
+
+        .nav a {
+            text-decoration: none;
+            color: #666;
+            padding: 0.5rem 1rem;
+            border-radius: 4px;
+            transition: background 0.2s;
+        }
+
+        .nav a:hover, .nav a.active {
+            background: #e3f2fd;
+            color: #4a90e2;
+        }
+
+        #login-section {
+            max-width: 400px;
+            margin: 100px auto;
+            background: white;
+            padding: 2rem;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+
+        #admin-section {
+            display: none;
+        }
+
+        .form-group {
+            margin-bottom: 1rem;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-weight: 600;
+        }
+
+        input[type="password"], input[type="text"], input[type="email"], select, textarea {
+            width: 100%;
+            padding: 0.75rem;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 1rem;
+        }
+
+        textarea {
+            min-height: 100px;
+            font-family: inherit;
+        }
+
+        .btn {
+            padding: 0.75rem 1.5rem;
+            border: none;
+            border-radius: 4px;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+
+        .btn-primary {
+            background-color: #4a90e2;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background-color: #357abd;
+        }
+
+        .btn-success {
+            background-color: #28a745;
+            color: white;
+        }
+
+        .btn-danger {
+            background-color: #dc3545;
+            color: white;
+        }
+
+        .btn-warning {
+            background-color: #ffc107;
+            color: #333;
+        }
+
+        .btn-small {
+            padding: 0.5rem 1rem;
+            font-size: 0.9rem;
+        }
+
+        .message {
+            padding: 1rem;
+            margin-bottom: 1rem;
+            border-radius: 4px;
+        }
+
+        .message.error {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+
+        .message.success {
+            background-color: #d4edda;
+            color: #155724;
+        }
+
+        .message.info {
+            background-color: #d1ecf1;
+            color: #0c5460;
+        }
+
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+
+        .stat-card {
+            background: white;
+            padding: 1.5rem;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .stat-number {
+            font-size: 2rem;
+            font-weight: bold;
+            color: #4a90e2;
+        }
+
+        .stat-label {
+            color: #888;
+            margin-top: 0.5rem;
+        }
+
+        .section-card {
+            background: white;
+            padding: 2rem;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 2rem;
+        }
+
+        .section-card h2 {
+            margin-bottom: 1.5rem;
+            color: #4a90e2;
+        }
+
+        .subscription-item {
+            border-bottom: 1px solid #e0e0e0;
+            padding: 1rem 0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .subscription-item:last-child {
+            border-bottom: none;
+        }
+
+        .subscription-info {
+            flex: 1;
+        }
+
+        .subscription-email {
+            font-weight: 600;
+            color: #333;
+        }
+
+        .subscription-page {
+            color: #666;
+            font-size: 0.9rem;
+        }
+
+        .subscription-date {
+            color: #999;
+            font-size: 0.85rem;
+        }
+
+        .subscription-actions {
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 0.25rem 0.5rem;
+            border-radius: 3px;
+            font-size: 0.8rem;
+            font-weight: 600;
+        }
+
+        .badge-active {
+            background-color: #28a745;
+            color: white;
+        }
+
+        .badge-inactive {
+            background-color: #6c757d;
+            color: white;
+        }
+
+        .no-data {
+            text-align: center;
+            padding: 2rem;
+            color: #888;
+        }
+
+        .test-email-form {
+            margin-top: 1rem;
+            padding: 1rem;
+            background: #f9f9f9;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body>
+    <div id="login-section">
+        <h2 style="margin-bottom: 1.5rem;">Admin Login</h2>
+        <div id="login-message"></div>
+        <form id="login-form">
+            <div class="form-group">
+                <label for="password">Password</label>
+                <input type="password" id="password" required>
+            </div>
+            <button type="submit" class="btn btn-primary" style="width: 100%;">Login</button>
+        </form>
+    </div>
+
+    <div id="admin-section">
+        <header>
+            <h1>Comment System Admin - Subscriptions</h1>
+            <div class="nav">
+                <a href="admin.html">Pending</a>
+                <a href="admin-all.html">All Comments</a>
+                <a href="admin-subscriptions.html" class="active">Subscriptions</a>
+            </div>
+        </header>
+
+        <div class="container">
+            <div class="stats" id="stats">
+                <div class="stat-card">
+                    <div class="stat-number" id="stat-total-subs">0</div>
+                    <div class="stat-label">Total Subscriptions</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number" id="stat-active-subs">0</div>
+                    <div class="stat-label">Active</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number" id="stat-inactive-subs">0</div>
+                    <div class="stat-label">Unsubscribed</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number" id="stat-pages">0</div>
+                    <div class="stat-label">Pages with Subscribers</div>
+                </div>
+            </div>
+
+            <div class="section-card">
+                <h2>Test Email Notifications</h2>
+                <div id="test-message"></div>
+                <div class="test-email-form">
+                    <div class="form-group">
+                        <label for="test-email">Send test email to:</label>
+                        <input type="email" id="test-email" placeholder="your@email.com" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="test-page-url">For page (URL):</label>
+                        <input type="text" id="test-page-url" placeholder="/2025/01/01/test-post/" value="/">
+                    </div>
+                    <button class="btn btn-primary" onclick="sendTestEmail()">Send Test Email</button>
+                </div>
+                <div style="margin-top: 1rem; padding: 1rem; background: #fff3cd; border-radius: 4px;">
+                    <strong>Note:</strong> This sends a real notification email. Check your spam folder if you don't see it.
+                </div>
+            </div>
+
+            <div class="section-card">
+                <h2>All Subscriptions</h2>
+                <div id="subscriptions-list">
+                    <p class="no-data">Loading...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_URL = 'api.php';
+        let allSubscriptions = [];
+
+        // Check if already logged in on page load
+        async function checkAuth() {
+            try {
+                const response = await fetch(`${API_URL}?action=subscriptions`, {
+                    credentials: 'include'
+                });
+
+                if (response.ok) {
+                    document.getElementById('login-section').style.display = 'none';
+                    document.getElementById('admin-section').style.display = 'block';
+                    loadDashboard();
+                }
+            } catch (error) {
+                // Not authenticated, show login
+            }
+        }
+
+        checkAuth();
+
+        // Login handling
+        document.getElementById('login-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const password = document.getElementById('password').value;
+            const messageEl = document.getElementById('login-message');
+
+            try {
+                const response = await fetch(`${API_URL}?action=login`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include',
+                    body: JSON.stringify({ password })
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    document.getElementById('login-section').style.display = 'none';
+                    document.getElementById('admin-section').style.display = 'block';
+                    loadDashboard();
+                } else {
+                    messageEl.innerHTML = `<div class="message error">${result.error}</div>`;
+                }
+            } catch (error) {
+                messageEl.innerHTML = '<div class="message error">Network error</div>';
+            }
+        });
+
+        async function loadDashboard() {
+            await loadSubscriptions();
+        }
+
+        async function loadSubscriptions() {
+            const container = document.getElementById('subscriptions-list');
+            try {
+                const timestamp = new Date().getTime();
+                const response = await fetch(`${API_URL}?action=subscriptions&_=${timestamp}`, {
+                    credentials: 'include',
+                    cache: 'no-store'
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    allSubscriptions = data.subscriptions || [];
+                    displaySubscriptions(allSubscriptions);
+                    updateStats(allSubscriptions);
+                } else {
+                    console.error('Failed to load subscriptions:', data.error);
+                    container.innerHTML = `<div class="message error">Error: ${data.error}</div>`;
+                }
+            } catch (error) {
+                console.error('Error loading subscriptions:', error);
+                container.innerHTML = `<div class="message error">Network error: ${error.message}</div>`;
+            }
+        }
+
+        function displaySubscriptions(subscriptions) {
+            const container = document.getElementById('subscriptions-list');
+
+            if (subscriptions.length === 0) {
+                container.innerHTML = '<p class="no-data">No subscriptions yet</p>';
+                return;
+            }
+
+            container.innerHTML = subscriptions.map(sub => `
+                <div class="subscription-item">
+                    <div class="subscription-info">
+                        <div class="subscription-email">${escapeHtml(sub.email)}</div>
+                        <div class="subscription-page">Page: ${escapeHtml(sub.page_url)}</div>
+                        <div class="subscription-date">
+                            Subscribed: ${new Date(sub.subscribed_at).toLocaleString()}
+                            <span class="badge badge-${sub.active ? 'active' : 'inactive'}">
+                                ${sub.active ? 'Active' : 'Unsubscribed'}
+                            </span>
+                        </div>
+                    </div>
+                    <div class="subscription-actions">
+                        ${sub.active ?
+                            `<button class="btn btn-warning btn-small" onclick="toggleSubscription('${sub.token}', 0)">Unsubscribe</button>` :
+                            `<button class="btn btn-success btn-small" onclick="toggleSubscription('${sub.token}', 1)">Reactivate</button>`
+                        }
+                        <button class="btn btn-danger btn-small" onclick="deleteSubscription('${sub.token}')">Delete</button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function updateStats(subscriptions) {
+            const active = subscriptions.filter(s => s.active).length;
+            const inactive = subscriptions.filter(s => !s.active).length;
+            const pages = new Set(subscriptions.map(s => s.page_url)).size;
+
+            document.getElementById('stat-total-subs').textContent = subscriptions.length;
+            document.getElementById('stat-active-subs').textContent = active;
+            document.getElementById('stat-inactive-subs').textContent = inactive;
+            document.getElementById('stat-pages').textContent = pages;
+        }
+
+        async function toggleSubscription(token, active) {
+            try {
+                const response = await fetch(`${API_URL}?action=toggle_subscription`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include',
+                    body: JSON.stringify({ token, active })
+                });
+
+                if (response.ok) {
+                    loadSubscriptions();
+                } else {
+                    alert('Failed to update subscription');
+                }
+            } catch (error) {
+                console.error('Error toggling subscription:', error);
+                alert('Network error');
+            }
+        }
+
+        async function deleteSubscription(token) {
+            if (!confirm('Are you sure you want to permanently delete this subscription?')) {
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_URL}?action=delete_subscription&token=${token}`, {
+                    method: 'DELETE',
+                    credentials: 'include'
+                });
+
+                if (response.ok) {
+                    loadSubscriptions();
+                } else {
+                    alert('Failed to delete subscription');
+                }
+            } catch (error) {
+                console.error('Error deleting subscription:', error);
+                alert('Network error');
+            }
+        }
+
+        async function sendTestEmail() {
+            const email = document.getElementById('test-email').value;
+            const pageUrl = document.getElementById('test-page-url').value;
+            const messageEl = document.getElementById('test-message');
+
+            if (!email) {
+                messageEl.innerHTML = '<div class="message error">Please enter an email address</div>';
+                return;
+            }
+
+            messageEl.innerHTML = '<div class="message info">Sending test email...</div>';
+
+            try {
+                const response = await fetch(`${API_URL}?action=test_email`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include',
+                    body: JSON.stringify({
+                        email,
+                        page_url: pageUrl
+                    })
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    messageEl.innerHTML = `<div class="message success">${result.message || 'Test email sent! Check your inbox (and spam folder).'}</div>`;
+                } else {
+                    messageEl.innerHTML = `<div class="message error">${result.error || 'Failed to send email'}</div>`;
+                }
+            } catch (error) {
+                console.error('Error sending test email:', error);
+                messageEl.innerHTML = `<div class="message error">Network error: ${error.message}</div>`;
+            }
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+    </script>
+</body>
+</html>

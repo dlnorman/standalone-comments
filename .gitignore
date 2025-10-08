@@ -1,0 +1,12 @@
+# Protect database directory (except template)
+db/*
+!db/
+!db/comments-default.db
+
+# Protect backups
+backups/
+
+# Local development files
+*.log
+.DS_Store
+dev.marker

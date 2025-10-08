@@ -1,0 +1,194 @@
+{{/* Hugo shortcode for displaying recent comments */}}
+{{/* Usage: {{< recent-comments limit="10" >}} */}}
+
+{{ $limit := .Get "limit" | default "10" }}
+{{ $title := .Get "title" | default "Recent Comments" }}
+{{ $showExcerpt := .Get "excerpt" | default "true" }}
+
+<div class="recent-comments-widget">
+    <style>
+        .recent-comments-widget {
+            margin: 30px 0;
+        }
+
+        .recent-comments-widget h2 {
+            margin-bottom: 20px;
+            color: #2c3e50;
+            font-size: 24px;
+        }
+
+        .recent-comments-loading {
+            text-align: center;
+            padding: 20px;
+            color: #7f8c8d;
+        }
+
+        .recent-comments-error {
+            background: #fee;
+            color: #c00;
+            padding: 15px;
+            border-radius: 4px;
+        }
+
+        .recent-comment-item {
+            padding: 15px;
+            margin-bottom: 12px;
+            background: #fafafa;
+            border-left: 3px solid #3498db;
+            border-radius: 4px;
+            transition: transform 0.2s;
+        }
+
+        .recent-comment-item:hover {
+            transform: translateX(5px);
+        }
+
+        .recent-comment-author {
+            font-weight: 600;
+            color: #2c3e50;
+            margin-right: 8px;
+        }
+
+        .recent-comment-author a {
+            color: #3498db;
+            text-decoration: none;
+        }
+
+        .recent-comment-author a:hover {
+            text-decoration: underline;
+        }
+
+        .recent-comment-date {
+            color: #7f8c8d;
+            font-size: 13px;
+        }
+
+        .recent-comment-excerpt {
+            color: #555;
+            margin: 8px 0;
+            line-height: 1.5;
+        }
+
+        .recent-comment-page {
+            font-size: 13px;
+            color: #7f8c8d;
+        }
+
+        .recent-comment-page a {
+            color: #3498db;
+            text-decoration: none;
+        }
+
+        .recent-comment-page a:hover {
+            text-decoration: underline;
+        }
+    </style>
+
+    <h2>{{ $title }}</h2>
+    <div id="recent-comments-list" class="recent-comments-loading">
+        Loading comments...
+    </div>
+
+    <script>
+        (function() {
+            const API_URL = '/comments/api.php';
+            const LIMIT = {{ $limit }};
+            const SHOW_EXCERPT = {{ $showExcerpt }};
+
+            function formatDate(dateString) {
+                const date = new Date(dateString);
+                const now = new Date();
+                const diffMs = now - date;
+                const diffMins = Math.floor(diffMs / 60000);
+                const diffHours = Math.floor(diffMs / 3600000);
+                const diffDays = Math.floor(diffMs / 86400000);
+
+                if (diffMins < 1) return 'just now';
+                if (diffMins < 60) return `${diffMins} minute${diffMins > 1 ? 's' : ''} ago`;
+                if (diffHours < 24) return `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`;
+                if (diffDays < 7) return `${diffDays} day${diffDays > 1 ? 's' : ''} ago`;
+
+                return date.toLocaleDateString('en-US', {
+                    year: 'numeric',
+                    month: 'short',
+                    day: 'numeric'
+                });
+            }
+
+            function getPageTitle(url) {
+                const path = url.replace(/\/$/, '');
+                const parts = path.split('/');
+                const last = parts[parts.length - 1];
+                return last ? last.replace(/-/g, ' ') : 'Home';
+            }
+
+            function escapeHtml(text) {
+                const div = document.createElement('div');
+                div.textContent = text;
+                return div.innerHTML;
+            }
+
+            async function loadRecentComments() {
+                const container = document.getElementById('recent-comments-list');
+
+                try {
+                    const response = await fetch(`${API_URL}?action=recent&limit=${LIMIT}`);
+
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+
+                    const data = await response.json();
+
+                    if (data.error) {
+                        throw new Error(data.error);
+                    }
+
+                    if (!data.comments || data.comments.length === 0) {
+                        container.innerHTML = '<div class="recent-comments-loading">No comments yet.</div>';
+                        return;
+                    }
+
+                    let html = '';
+                    data.comments.forEach(comment => {
+                        const authorHtml = comment.author_url
+                            ? `<a href="${escapeHtml(comment.author_url)}" target="_blank" rel="nofollow noopener">${escapeHtml(comment.author_name)}</a>`
+                            : escapeHtml(comment.author_name);
+
+                        const pageTitle = getPageTitle(comment.page_url);
+                        const commentLink = `${comment.page_url}#comment-${comment.id}`;
+
+                        const excerptHtml = SHOW_EXCERPT
+                            ? `<div class="recent-comment-excerpt">${escapeHtml(comment.excerpt)}</div>`
+                            : '';
+
+                        html += `
+                            <div class="recent-comment-item">
+                                <div>
+                                    <span class="recent-comment-author">${authorHtml}</span>
+                                    <span class="recent-comment-date">${formatDate(comment.created_at)}</span>
+                                </div>
+                                ${excerptHtml}
+                                <div class="recent-comment-page">
+                                    on <a href="${commentLink}">${escapeHtml(pageTitle)}</a>
+                                </div>
+                            </div>
+                        `;
+                    });
+
+                    container.innerHTML = html;
+
+                } catch (error) {
+                    console.error('Error loading recent comments:', error);
+                    container.innerHTML = `
+                        <div class="recent-comments-error">
+                            Failed to load comments: ${escapeHtml(error.message)}
+                        </div>
+                    `;
+                }
+            }
+
+            loadRecentComments();
+        })();
+    </script>
+</div>

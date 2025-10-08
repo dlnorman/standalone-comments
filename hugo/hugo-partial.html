@@ -1,0 +1,31 @@
+{{/*
+  Comment System Partial for Hugo
+
+  Usage in templates (e.g., in single.html):
+  {{ partial "comments.html" . }}
+
+  This is a partial, NOT a shortcode.
+  Copy this file to: layouts/partials/comments.html
+
+  The difference:
+  - Partials are used in templates with {{ partial "name" . }}
+  - Shortcodes are used in content with {{< name >}}
+*/}}
+
+{{- $apiUrl := "/comments/api.php" -}}
+{{- $pageUrl := .RelPermalink -}}
+
+<div id="comments-container"
+     data-api-url="{{ $apiUrl }}"
+     data-page-url="{{ $pageUrl }}">
+</div>
+
+{{- if not (.Scratch.Get "comments-loaded") -}}
+  {{- .Scratch.Set "comments-loaded" true -}}
+
+  <!-- Comment System Styles -->
+  <link rel="stylesheet" href="/comments/comments.css">
+
+  <!-- Comment System Script -->
+  <script src="/comments/comments.js"></script>
+{{- end -}}

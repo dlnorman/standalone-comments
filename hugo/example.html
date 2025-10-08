@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Comment System Demo</title>
+    <link rel="stylesheet" href="comments.css">
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 2rem;
+            background: #f5f5f5;
+        }
+        .article {
+            background: white;
+            padding: 2rem;
+            margin-bottom: 2rem;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            margin-bottom: 0.5rem;
+        }
+        .meta {
+            color: #888;
+            margin-bottom: 2rem;
+        }
+        .content {
+            line-height: 1.8;
+            color: #444;
+        }
+    </style>
+</head>
+<body>
+    <div class="article">
+        <h1>Example Blog Post</h1>
+        <div class="meta">Posted on January 1, 2024 by Admin</div>
+        <div class="content">
+            <p>This is an example blog post demonstrating the standalone comment system.</p>
+            <p>Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.</p>
+            <p>Scroll down to see the comment system in action!</p>
+        </div>
+    </div>
+
+    <!-- Comment System -->
+    <div id="comments-container"
+         data-api-url="api.php"
+         data-page-url="/blog/example-post">
+    </div>
+
+    <script src="comments.js"></script>
+</body>
+</html>

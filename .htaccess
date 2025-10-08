@@ -1,0 +1,76 @@
+# Comment System .htaccess
+# Security protections for production deployment
+
+# Protect database directory - CRITICAL SECURITY
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteRule ^db/ - [F,L]
+</IfModule>
+
+# Alternative method for blocking db directory
+RedirectMatch 403 /comments/db/.*
+
+# Also protect any .db files in root (belt and suspenders)
+<FilesMatch "\.(db|db-shm|db-wal)$">
+    Require all denied
+</FilesMatch>
+
+# Block access to 'utils' directory and all contents
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteRule ^utils/ - [F,L]
+</IfModule>
+
+# Alternative method for blocking utils directory
+RedirectMatch 403 /comments/utils/.*
+
+# Block access to 'backups' directory and all contents
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteRule ^backups/ - [F,L]
+</IfModule>
+
+# Alternative method for blocking backups directory
+RedirectMatch 403 /comments/backups/.*
+
+# Protect sensitive file types
+<FilesMatch "\.(sql|md|log|sh|bak|backup)$">
+    Require all denied
+</FilesMatch>
+
+# Block access to configuration and setup files
+<FilesMatch "^(config|database)\.php$">
+    # Allow PHP to include these files but block direct access
+    <IfModule mod_rewrite.c>
+        RewriteEngine On
+        RewriteCond %{REQUEST_FILENAME} -f
+        RewriteRule ^(config|database)\.php$ - [F,L]
+    </IfModule>
+</FilesMatch>
+
+# Block access to all utility PHP files
+<FilesMatch "^(import-|set-password|setup|test-|backup-|migrate-|enable-).*\.php$">
+    Require all denied
+</FilesMatch>
+
+# Prevent directory listing
+Options -Indexes
+
+# Enable CORS for API (overridden by PHP for specific origins)
+<IfModule mod_headers.c>
+    Header set Access-Control-Allow-Origin "*"
+</IfModule>
+
+# Security headers
+<IfModule mod_headers.c>
+    Header set X-Content-Type-Options "nosniff"
+    Header set X-Frame-Options "DENY"
+    Header set X-XSS-Protection "1; mode=block"
+</IfModule>
+
+# PHP settings
+<IfModule mod_php.c>
+    php_value upload_max_filesize 2M
+    php_value post_max_size 2M
+    php_value max_execution_time 30
+</IfModule>

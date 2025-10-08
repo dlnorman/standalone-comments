@@ -1,0 +1,31 @@
+{{/*
+  Comment System Shortcode for Hugo
+
+  Usage in your Hugo content:
+  {{< comments >}}
+
+  Or with custom API URL:
+  {{< comments api_url="/path/to/api.php" >}}
+
+  Installation:
+  1. Copy this file to: layouts/shortcodes/comments.html
+  2. Add CSS and JS to your Hugo site (see instructions below)
+*/}}
+
+{{- $apiUrl := .Get "api_url" | default "/comments/api.php" -}}
+{{- $pageUrl := .Page.RelPermalink -}}
+
+<div id="comments-container"
+     data-api-url="{{ $apiUrl }}"
+     data-page-url="{{ $pageUrl }}">
+</div>
+
+{{- if not (.Page.Scratch.Get "comments-loaded") -}}
+  {{- .Page.Scratch.Set "comments-loaded" true -}}
+
+  <!-- Comment System Styles -->
+  <link rel="stylesheet" href="/comments/comments.css">
+
+  <!-- Comment System Script -->
+  <script src="/comments/comments.js"></script>
+{{- end -}}

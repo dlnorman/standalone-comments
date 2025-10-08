@@ -1,0 +1,547 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Comment System Admin - All Comments</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background: #f5f5f5;
+            color: #333;
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+
+        header {
+            background: white;
+            padding: 1.5rem 2rem;
+            margin-bottom: 2rem;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        h1 {
+            color: #4a90e2;
+        }
+
+        .nav {
+            display: flex;
+            gap: 1rem;
+        }
+
+        .nav a {
+            text-decoration: none;
+            color: #666;
+            padding: 0.5rem 1rem;
+            border-radius: 4px;
+            transition: background 0.2s;
+        }
+
+        .nav a:hover, .nav a.active {
+            background: #e3f2fd;
+            color: #4a90e2;
+        }
+
+        #login-section {
+            max-width: 400px;
+            margin: 100px auto;
+            background: white;
+            padding: 2rem;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+
+        #admin-section {
+            display: none;
+        }
+
+        .form-group {
+            margin-bottom: 1rem;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-weight: 600;
+        }
+
+        input[type="password"], input[type="text"], select {
+            width: 100%;
+            padding: 0.75rem;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 1rem;
+        }
+
+        .btn {
+            padding: 0.75rem 1.5rem;
+            border: none;
+            border-radius: 4px;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+
+        .btn-primary {
+            background-color: #4a90e2;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background-color: #357abd;
+        }
+
+        .btn-success {
+            background-color: #28a745;
+            color: white;
+        }
+
+        .btn-danger {
+            background-color: #dc3545;
+            color: white;
+        }
+
+        .btn-warning {
+            background-color: #ffc107;
+            color: #333;
+        }
+
+        .message {
+            padding: 1rem;
+            margin-bottom: 1rem;
+            border-radius: 4px;
+        }
+
+        .message.error {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+
+        .message.success {
+            background-color: #d4edda;
+            color: #155724;
+        }
+
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+
+        .stat-card {
+            background: white;
+            padding: 1.5rem;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .stat-number {
+            font-size: 2rem;
+            font-weight: bold;
+            color: #4a90e2;
+        }
+
+        .stat-label {
+            color: #888;
+            margin-top: 0.5rem;
+        }
+
+        .filters {
+            background: white;
+            padding: 1.5rem;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 2rem;
+            display: flex;
+            gap: 1rem;
+            align-items: end;
+            flex-wrap: wrap;
+        }
+
+        .filter-group {
+            flex: 1;
+            min-width: 200px;
+        }
+
+        .comments-section {
+            background: white;
+            padding: 2rem;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .comment-item {
+            border-bottom: 1px solid #e0e0e0;
+            padding: 1.5rem 0;
+        }
+
+        .comment-item:last-child {
+            border-bottom: none;
+        }
+
+        .comment-meta {
+            display: flex;
+            gap: 1rem;
+            margin-bottom: 0.5rem;
+            font-size: 0.9rem;
+            color: #666;
+            flex-wrap: wrap;
+        }
+
+        .comment-author {
+            font-weight: 600;
+            color: #333;
+        }
+
+        .comment-content {
+            margin: 1rem 0;
+            padding: 1rem;
+            background: #f9f9f9;
+            border-left: 3px solid #4a90e2;
+        }
+
+        .comment-actions {
+            display: flex;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+        }
+
+        .comment-actions button {
+            padding: 0.5rem 1rem;
+            font-size: 0.9rem;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 0.25rem 0.5rem;
+            border-radius: 3px;
+            font-size: 0.8rem;
+            font-weight: 600;
+        }
+
+        .badge-pending {
+            background-color: #ffc107;
+            color: #333;
+        }
+
+        .badge-approved {
+            background-color: #28a745;
+            color: white;
+        }
+
+        .badge-spam {
+            background-color: #dc3545;
+            color: white;
+        }
+
+        .no-comments {
+            text-align: center;
+            padding: 2rem;
+            color: #888;
+        }
+
+        .pagination {
+            margin-top: 2rem;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <div id="login-section">
+        <h2 style="margin-bottom: 1.5rem;">Admin Login</h2>
+        <div id="login-message"></div>
+        <form id="login-form">
+            <div class="form-group">
+                <label for="password">Password</label>
+                <input type="password" id="password" required>
+            </div>
+            <button type="submit" class="btn btn-primary" style="width: 100%;">Login</button>
+        </form>
+    </div>
+
+    <div id="admin-section">
+        <header>
+            <h1>Comment System Admin - All Comments</h1>
+            <div class="nav">
+                <a href="admin.html">Pending</a>
+                <a href="admin-all.html" class="active">All Comments</a>
+                <a href="admin-subscriptions.html">Subscriptions</a>
+            </div>
+        </header>
+
+        <div class="container">
+            <div class="stats" id="stats">
+                <div class="stat-card">
+                    <div class="stat-number" id="stat-pending">0</div>
+                    <div class="stat-label">Pending</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number" id="stat-approved">0</div>
+                    <div class="stat-label">Approved</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number" id="stat-spam">0</div>
+                    <div class="stat-label">Spam</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number" id="stat-total">0</div>
+                    <div class="stat-label">Total</div>
+                </div>
+            </div>
+
+            <div class="filters">
+                <div class="filter-group">
+                    <label>Filter by Status</label>
+                    <select id="filter-status">
+                        <option value="all">All Statuses</option>
+                        <option value="approved">Approved</option>
+                        <option value="pending">Pending</option>
+                        <option value="spam">Spam</option>
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <label>Filter by URL</label>
+                    <input type="text" id="filter-url" placeholder="Enter page URL...">
+                </div>
+                <div class="filter-group">
+                    <label>&nbsp;</label>
+                    <button class="btn btn-primary" onclick="applyFilters()">Apply Filters</button>
+                </div>
+            </div>
+
+            <div class="comments-section">
+                <h2 style="margin-bottom: 1.5rem;">All Comments</h2>
+                <div id="all-comments">
+                    <p class="no-comments">Loading...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_URL = 'api.php';
+        let allComments = [];
+
+        // Check if already logged in on page load
+        async function checkAuth() {
+            try {
+                const response = await fetch(`${API_URL}?action=all`, {
+                    credentials: 'include'
+                });
+
+                if (response.ok) {
+                    // Already authenticated
+                    document.getElementById('login-section').style.display = 'none';
+                    document.getElementById('admin-section').style.display = 'block';
+                    loadDashboard();
+                }
+            } catch (error) {
+                // Not authenticated, show login
+            }
+        }
+
+        // Run auth check on page load
+        checkAuth();
+
+        // Login handling
+        document.getElementById('login-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const password = document.getElementById('password').value;
+            const messageEl = document.getElementById('login-message');
+
+            try {
+                const response = await fetch(`${API_URL}?action=login`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include',
+                    body: JSON.stringify({ password })
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    document.getElementById('login-section').style.display = 'none';
+                    document.getElementById('admin-section').style.display = 'block';
+                    loadDashboard();
+                } else {
+                    messageEl.innerHTML = `<div class="message error">${result.error}</div>`;
+                }
+            } catch (error) {
+                messageEl.innerHTML = '<div class="message error">Network error</div>';
+            }
+        });
+
+        async function loadDashboard() {
+            await loadAllComments();
+        }
+
+        async function loadAllComments() {
+            const container = document.getElementById('all-comments');
+            try {
+                // Add timestamp to prevent caching
+                const timestamp = new Date().getTime();
+                const response = await fetch(`${API_URL}?action=all&_=${timestamp}`, {
+                    credentials: 'include',
+                    cache: 'no-store'
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    allComments = data.comments || [];
+                    displayComments(allComments);
+                    updateStats(allComments);
+                } else {
+                    console.error('Failed to load comments:', data.error);
+                    container.innerHTML = `<div class="message error">Error: ${data.error || 'Failed to load comments'}<br><small>Try logging in again or check the browser console for details.</small></div>`;
+                }
+            } catch (error) {
+                console.error('Error loading comments:', error);
+                container.innerHTML = `<div class="message error">Network error: ${error.message}<br><small>Check browser console for details.</small></div>`;
+            }
+        }
+
+        function applyFilters() {
+            const statusFilter = document.getElementById('filter-status').value;
+            const urlFilter = document.getElementById('filter-url').value.toLowerCase();
+
+            let filtered = allComments;
+
+            if (statusFilter !== 'all') {
+                filtered = filtered.filter(c => c.status === statusFilter);
+            }
+
+            if (urlFilter) {
+                filtered = filtered.filter(c => c.page_url.toLowerCase().includes(urlFilter));
+            }
+
+            displayComments(filtered);
+        }
+
+        function displayComments(comments) {
+            const container = document.getElementById('all-comments');
+
+            if (comments.length === 0) {
+                container.innerHTML = '<p class="no-comments">No comments found</p>';
+                return;
+            }
+
+            container.innerHTML = comments.map(comment => `
+                <div class="comment-item" id="comment-${comment.id}">
+                    <div class="comment-meta">
+                        <span class="comment-author">${escapeHtml(comment.author_name)}</span>
+                        <span>${escapeHtml(comment.author_email)}</span>
+                        ${comment.author_url ? `<a href="${escapeHtml(comment.author_url)}" target="_blank">Website</a>` : ''}
+                        <span>${new Date(comment.created_at).toLocaleString()}</span>
+                        <span class="badge badge-${comment.status}">${comment.status}</span>
+                    </div>
+                    <div><strong>Page:</strong> ${escapeHtml(comment.page_url)}</div>
+                    <div><strong>IP:</strong> ${escapeHtml(comment.ip_address || 'N/A')}</div>
+                    ${comment.parent_id ? `<div><strong>Reply to:</strong> Comment #${comment.parent_id}</div>` : ''}
+                    <div class="comment-content">${escapeHtml(comment.content)}</div>
+                    <div class="comment-actions">
+                        ${comment.status !== 'approved' ? `<button class="btn btn-success" onclick="moderateComment(${comment.id}, 'approved')">Approve</button>` : ''}
+                        ${comment.status !== 'spam' ? `<button class="btn btn-warning" onclick="moderateComment(${comment.id}, 'spam')">Mark as Spam</button>` : ''}
+                        <button class="btn btn-danger" onclick="deleteComment(${comment.id})">Delete</button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function updateStats(comments) {
+            const pending = comments.filter(c => c.status === 'pending').length;
+            const approved = comments.filter(c => c.status === 'approved').length;
+            const spam = comments.filter(c => c.status === 'spam').length;
+
+            document.getElementById('stat-pending').textContent = pending;
+            document.getElementById('stat-approved').textContent = approved;
+            document.getElementById('stat-spam').textContent = spam;
+            document.getElementById('stat-total').textContent = comments.length;
+        }
+
+        async function moderateComment(id, status) {
+            const commentEl = document.getElementById(`comment-${id}`);
+            if (!commentEl) return; // Already removed
+
+            const originalHTML = commentEl.innerHTML;
+
+            try {
+                // Show loading state
+                commentEl.style.opacity = '0.5';
+                commentEl.innerHTML = `<p style="text-align: center; padding: 2rem;">Processing...</p>`;
+
+                const response = await fetch(`${API_URL}?action=moderate&id=${id}`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Cache-Control': 'no-cache'
+                    },
+                    credentials: 'include',
+                    body: JSON.stringify({ status })
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    // Show success briefly
+                    commentEl.innerHTML = `<p style="text-align: center; padding: 2rem; color: green;">✓ ${status === 'approved' ? 'Approved' : status === 'spam' ? 'Marked as spam' : 'Updated'}!</p>`;
+
+                    // Wait a moment, then reload to get fresh data
+                    setTimeout(async () => {
+                        await loadAllComments();
+                    }, 500);
+                } else {
+                    // Restore on error
+                    commentEl.style.opacity = '1';
+                    commentEl.innerHTML = originalHTML + `<p class="error" style="margin-top: 1rem;">Failed: ${result.error || 'Unknown error'}</p>`;
+                }
+            } catch (error) {
+                console.error('Error moderating comment:', error);
+                commentEl.style.opacity = '1';
+                commentEl.innerHTML = originalHTML + '<p class="error" style="margin-top: 1rem;">Network error</p>';
+            }
+        }
+
+        async function deleteComment(id) {
+            if (!confirm('Are you sure you want to delete this comment?')) {
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_URL}?action=delete&id=${id}`, {
+                    method: 'DELETE',
+                    credentials: 'include'
+                });
+
+                if (response.ok) {
+                    loadAllComments();
+                }
+            } catch (error) {
+                console.error('Error deleting comment:', error);
+            }
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+    </script>
+</body>
+</html>
