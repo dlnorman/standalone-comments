@@ -216,6 +216,15 @@ php utils/import-disqus.php path/to/export.xml
 php utils/import-talkyard.php path/to/export.json
 ```
 
+DN: When I ran the TalkYard import, the URLs for comments in the database were messed up. Claude Code made a script to try to fix it (it worked for me, but who knows?) so you may need to run:
+
+```bash
+# After running the TalkYard import (see above), try this:
+php utils/fix-urls.php
+```
+
+DN: I have no idea why that was needed, or if it's needed after running the Disqus import script.
+
 ## Requirements
 
 - PHP 7.4+
