@@ -30,6 +30,9 @@
             margin-bottom: 2rem;
             border-radius: 8px;
             box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
         }
 
         h1 {
@@ -210,6 +213,86 @@
             padding: 2rem;
             color: #888;
         }
+
+        .nav {
+            display: flex;
+            gap: 1rem;
+        }
+
+        .nav a {
+            text-decoration: none;
+            color: #666;
+            padding: 0.5rem 1rem;
+            border-radius: 4px;
+            transition: background 0.2s;
+        }
+
+        .nav a:hover, .nav a.active {
+            background: #e3f2fd;
+            color: #4a90e2;
+        }
+
+        /* Mobile Responsive Styles */
+        @media (max-width: 768px) {
+            .container {
+                padding: 1rem;
+            }
+
+            header {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 1rem;
+                padding: 1rem;
+            }
+
+            h1 {
+                font-size: 1.5rem;
+            }
+
+            .nav {
+                width: 100%;
+                flex-wrap: wrap;
+            }
+
+            .nav a {
+                flex: 1;
+                min-width: 100px;
+                text-align: center;
+            }
+
+            .stats {
+                grid-template-columns: 1fr;
+            }
+
+            .comment-meta {
+                flex-direction: column;
+                gap: 0.5rem;
+            }
+
+            .comment-actions {
+                flex-direction: column;
+            }
+
+            .comment-actions button {
+                width: 100%;
+            }
+
+            #login-section {
+                margin: 20px auto;
+                padding: 1.5rem;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .stat-number {
+                font-size: 1.5rem;
+            }
+
+            .btn {
+                padding: 0.6rem 1rem;
+                font-size: 0.9rem;
+            }
+        }
     </style>
 </head>
 <body>
@@ -231,10 +314,10 @@
     <div id="admin-section">
         <header>
             <h1>Comment System Admin</h1>
-            <div class="nav" style="display: flex; gap: 1rem;">
-                <a href="admin.html" style="text-decoration: none; color: #4a90e2; padding: 0.5rem 1rem; background: #e3f2fd; border-radius: 4px;">Pending</a>
-                <a href="admin-all.html" style="text-decoration: none; color: #666; padding: 0.5rem 1rem; border-radius: 4px;">All Comments</a>
-                <a href="admin-subscriptions.html" style="text-decoration: none; color: #666; padding: 0.5rem 1rem; border-radius: 4px;">Subscriptions</a>
+            <div class="nav">
+                <a href="admin.html" class="active">Pending</a>
+                <a href="admin-all.html">All Comments</a>
+                <a href="admin-subscriptions.html">Subscriptions</a>
             </div>
         </header>
 

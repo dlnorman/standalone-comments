@@ -257,8 +257,136 @@
         }
 
         .pagination {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 0.5rem;
             margin-top: 2rem;
-            text-align: center;
+            flex-wrap: wrap;
+        }
+
+        .pagination button {
+            padding: 0.5rem 1rem;
+            border: 1px solid #ddd;
+            background: white;
+            color: #4a90e2;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .pagination button:hover:not(:disabled) {
+            background: #4a90e2;
+            color: white;
+        }
+
+        .pagination button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .pagination button.active {
+            background: #4a90e2;
+            color: white;
+        }
+
+        .pagination .page-info {
+            color: #666;
+            font-size: 0.9rem;
+        }
+
+        /* Mobile Responsive Styles */
+        @media (max-width: 768px) {
+            .container {
+                padding: 1rem;
+            }
+
+            header {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 1rem;
+                padding: 1rem;
+            }
+
+            h1 {
+                font-size: 1.5rem;
+            }
+
+            .nav {
+                width: 100%;
+                flex-wrap: wrap;
+            }
+
+            .nav a {
+                flex: 1;
+                min-width: 100px;
+                text-align: center;
+            }
+
+            .stats {
+                grid-template-columns: 1fr 1fr;
+            }
+
+            .filters {
+                flex-direction: column;
+            }
+
+            .filter-group {
+                width: 100%;
+            }
+
+            .comment-meta {
+                flex-direction: column;
+                gap: 0.5rem;
+            }
+
+            .comment-actions {
+                flex-direction: column;
+            }
+
+            .comment-actions button {
+                width: 100%;
+            }
+
+            .pagination {
+                gap: 0.25rem;
+            }
+
+            .pagination button {
+                padding: 0.4rem 0.75rem;
+                font-size: 0.85rem;
+            }
+
+            #login-section {
+                margin: 20px auto;
+                padding: 1.5rem;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .stats {
+                grid-template-columns: 1fr;
+            }
+
+            .stat-number {
+                font-size: 1.5rem;
+            }
+
+            .btn {
+                padding: 0.6rem 1rem;
+                font-size: 0.9rem;
+            }
+
+            .pagination button {
+                padding: 0.35rem 0.6rem;
+                font-size: 0.8rem;
+            }
+
+            .pagination .page-info {
+                width: 100%;
+                text-align: center;
+                margin-top: 0.5rem;
+            }
         }
     </style>
 </head>
@@ -316,20 +444,38 @@
                     </select>
                 </div>
                 <div class="filter-group">
-                    <label>Filter by URL</label>
+                    <label>Filter by Name</label>
+                    <input type="text" id="filter-name" placeholder="Enter author name...">
+                </div>
+                <div class="filter-group">
+                    <label>Filter by Email</label>
+                    <input type="text" id="filter-email" placeholder="Enter email...">
+                </div>
+                <div class="filter-group">
+                    <label>Filter by Post Title/URL</label>
                     <input type="text" id="filter-url" placeholder="Enter page URL...">
                 </div>
                 <div class="filter-group">
                     <label>&nbsp;</label>
                     <button class="btn btn-primary" onclick="applyFilters()">Apply Filters</button>
                 </div>
+                <div class="filter-group">
+                    <label>&nbsp;</label>
+                    <button class="btn btn-warning" onclick="clearFilters()">Clear Filters</button>
+                </div>
             </div>
 
             <div class="comments-section">
-                <h2 style="margin-bottom: 1.5rem;">All Comments</h2>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; flex-wrap: wrap; gap: 1rem;">
+                    <h2 style="margin: 0;">All Comments</h2>
+                    <button class="btn btn-primary" onclick="exportToDisqus()">
+                        <span style="margin-right: 0.5rem;">📥</span>Export to Disqus
+                    </button>
+                </div>
                 <div id="all-comments">
                     <p class="no-comments">Loading...</p>
                 </div>
+                <div class="pagination" id="pagination"></div>
             </div>
         </div>
     </div>
@@ -337,6 +483,8 @@
     <script>
         const API_URL = 'api.php';
         let allComments = [];
+        let currentPage = 1;
+        const commentsPerPage = 20;
 
         // Check if already logged in on page load
         async function checkAuth() {
@@ -406,6 +554,7 @@
                 if (response.ok) {
                     allComments = data.comments || [];
                     displayComments(allComments);
+                    renderPagination(allComments);
                     updateStats(allComments);
                 } else {
                     console.error('Failed to load comments:', data.error);
@@ -417,8 +566,10 @@
             }
         }
 
-        function applyFilters() {
+        function getFilteredComments() {
             const statusFilter = document.getElementById('filter-status').value;
+            const nameFilter = document.getElementById('filter-name').value.toLowerCase();
+            const emailFilter = document.getElementById('filter-email').value.toLowerCase();
             const urlFilter = document.getElementById('filter-url').value.toLowerCase();
 
             let filtered = allComments;
@@ -427,11 +578,36 @@
                 filtered = filtered.filter(c => c.status === statusFilter);
             }
 
+            if (nameFilter) {
+                filtered = filtered.filter(c => c.author_name.toLowerCase().includes(nameFilter));
+            }
+
+            if (emailFilter) {
+                filtered = filtered.filter(c => c.author_email.toLowerCase().includes(emailFilter));
+            }
+
             if (urlFilter) {
                 filtered = filtered.filter(c => c.page_url.toLowerCase().includes(urlFilter));
             }
 
+            return filtered;
+        }
+
+        function applyFilters() {
+            currentPage = 1; // Reset to first page when filtering
+            const filtered = getFilteredComments();
             displayComments(filtered);
+            renderPagination(filtered);
+        }
+
+        function clearFilters() {
+            document.getElementById('filter-status').value = 'all';
+            document.getElementById('filter-name').value = '';
+            document.getElementById('filter-email').value = '';
+            document.getElementById('filter-url').value = '';
+            currentPage = 1;
+            displayComments(allComments);
+            renderPagination(allComments);
         }
 
         function displayComments(comments) {
@@ -439,10 +615,16 @@
 
             if (comments.length === 0) {
                 container.innerHTML = '<p class="no-comments">No comments found</p>';
+                document.getElementById('pagination').innerHTML = '';
                 return;
             }
 
-            container.innerHTML = comments.map(comment => `
+            // Calculate pagination
+            const startIndex = (currentPage - 1) * commentsPerPage;
+            const endIndex = startIndex + commentsPerPage;
+            const paginatedComments = comments.slice(startIndex, endIndex);
+
+            container.innerHTML = paginatedComments.map(comment => `
                 <div class="comment-item" id="comment-${comment.id}">
                     <div class="comment-meta">
                         <span class="comment-author">${escapeHtml(comment.author_name)}</span>
@@ -451,7 +633,7 @@
                         <span>${new Date(comment.created_at).toLocaleString()}</span>
                         <span class="badge badge-${comment.status}">${comment.status}</span>
                     </div>
-                    <div><strong>Page:</strong> ${escapeHtml(comment.page_url)}</div>
+                    <div><strong>Page:</strong> <a href="${escapeHtml(comment.page_url)}" target="_blank" style="color: #4a90e2; text-decoration: none;">${escapeHtml(comment.page_url)}</a></div>
                     <div><strong>IP:</strong> ${escapeHtml(comment.ip_address || 'N/A')}</div>
                     ${comment.parent_id ? `<div><strong>Reply to:</strong> Comment #${comment.parent_id}</div>` : ''}
                     <div class="comment-content">${escapeHtml(comment.content)}</div>
@@ -505,6 +687,8 @@
                     // Wait a moment, then reload to get fresh data
                     setTimeout(async () => {
                         await loadAllComments();
+                        const filtered = getFilteredComments();
+                        renderPagination(filtered);
                     }, 500);
                 } else {
                     // Restore on error
@@ -535,6 +719,77 @@
             } catch (error) {
                 console.error('Error deleting comment:', error);
             }
+        }
+
+        function renderPagination(comments) {
+            const paginationEl = document.getElementById('pagination');
+            const totalPages = Math.ceil(comments.length / commentsPerPage);
+
+            if (totalPages <= 1) {
+                paginationEl.innerHTML = '';
+                return;
+            }
+
+            let html = '';
+
+            // Previous button
+            html += `<button onclick="changePage(${currentPage - 1})" ${currentPage === 1 ? 'disabled' : ''}>Previous</button>`;
+
+            // Page numbers
+            const maxVisiblePages = 5;
+            let startPage = Math.max(1, currentPage - Math.floor(maxVisiblePages / 2));
+            let endPage = Math.min(totalPages, startPage + maxVisiblePages - 1);
+
+            if (endPage - startPage < maxVisiblePages - 1) {
+                startPage = Math.max(1, endPage - maxVisiblePages + 1);
+            }
+
+            if (startPage > 1) {
+                html += `<button onclick="changePage(1)">1</button>`;
+                if (startPage > 2) {
+                    html += `<span class="page-info">...</span>`;
+                }
+            }
+
+            for (let i = startPage; i <= endPage; i++) {
+                html += `<button onclick="changePage(${i})" ${i === currentPage ? 'class="active"' : ''}>${i}</button>`;
+            }
+
+            if (endPage < totalPages) {
+                if (endPage < totalPages - 1) {
+                    html += `<span class="page-info">...</span>`;
+                }
+                html += `<button onclick="changePage(${totalPages})">${totalPages}</button>`;
+            }
+
+            // Next button
+            html += `<button onclick="changePage(${currentPage + 1})" ${currentPage === totalPages ? 'disabled' : ''}>Next</button>`;
+
+            // Info text
+            const startIndex = (currentPage - 1) * commentsPerPage + 1;
+            const endIndex = Math.min(currentPage * commentsPerPage, comments.length);
+            html += `<span class="page-info">Showing ${startIndex}-${endIndex} of ${comments.length}</span>`;
+
+            paginationEl.innerHTML = html;
+        }
+
+        function changePage(page) {
+            const filtered = getFilteredComments();
+            const totalPages = Math.ceil(filtered.length / commentsPerPage);
+
+            if (page < 1 || page > totalPages) return;
+
+            currentPage = page;
+            displayComments(filtered);
+            renderPagination(filtered);
+
+            // Scroll to top of comments section
+            document.querySelector('.comments-section').scrollIntoView({ behavior: 'smooth' });
+        }
+
+        function exportToDisqus() {
+            // Open export in new window to download file
+            window.open(`${API_URL}?action=export_disqus`, '_blank');
         }
 
         function escapeHtml(text) {

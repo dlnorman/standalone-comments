@@ -639,4 +639,86 @@ if ($method === 'POST' && $action === 'test_email') {
     }
 }
 
+// GET /api.php?action=export_disqus (admin)
+if ($method === 'GET' && $action === 'export_disqus') {
+    if (!isAdmin()) {
+        jsonResponse(['error' => 'Unauthorized'], 401);
+    }
+
+    // Fetch all comments
+    $stmt = $db->query("
+        SELECT id, page_url, parent_id, author_name, author_email, author_url,
+               content, created_at, status, ip_address
+        FROM comments
+        ORDER BY created_at ASC
+    ");
+    $comments = $stmt->fetchAll();
+
+    // Generate Disqus WXR format
+    header('Content-Type: application/xml; charset=utf-8');
+    header('Content-Disposition: attachment; filename="disqus_export_' . date('Y-m-d') . '.xml"');
+    header('Cache-Control: no-cache');
+
+    echo '<?xml version="1.0" encoding="UTF-8"?>' . "\n";
+    echo '<rss version="2.0"' . "\n";
+    echo '     xmlns:content="http://purl.org/rss/1.0/modules/content/"' . "\n";
+    echo '     xmlns:dsq="http://www.disqus.com/"' . "\n";
+    echo '     xmlns:dc="http://purl.org/dc/elements/1.1/"' . "\n";
+    echo '     xmlns:wp="http://wordpress.org/export/1.0/">' . "\n";
+    echo '  <channel>' . "\n";
+    echo '    <title>' . htmlspecialchars($_SERVER['HTTP_HOST']) . '</title>' . "\n";
+    echo '    <link>https://' . htmlspecialchars($_SERVER['HTTP_HOST']) . '</link>' . "\n";
+    echo '    <description>Comment export from standalone-comments</description>' . "\n";
+    echo '    <pubDate>' . date('r') . '</pubDate>' . "\n\n";
+
+    // Group comments by page
+    $pageGroups = [];
+    foreach ($comments as $comment) {
+        $pageGroups[$comment['page_url']][] = $comment;
+    }
+
+    // Output each page as an item
+    foreach ($pageGroups as $pageUrl => $pageComments) {
+        // Use page URL as identifier
+        $pageId = md5($pageUrl);
+
+        echo '    <item>' . "\n";
+        echo '      <title>' . htmlspecialchars($pageUrl) . '</title>' . "\n";
+        echo '      <link>' . htmlspecialchars($pageUrl) . '</link>' . "\n";
+        echo '      <content:encoded><![CDATA[]]></content:encoded>' . "\n";
+        echo '      <dsq:thread_identifier>' . htmlspecialchars($pageId) . '</dsq:thread_identifier>' . "\n";
+        echo '      <wp:post_date_gmt>' . date('Y-m-d H:i:s') . '</wp:post_date_gmt>' . "\n";
+        echo '      <wp:comment_status>open</wp:comment_status>' . "\n";
+
+        // Output comments for this page
+        foreach ($pageComments as $comment) {
+            echo '      <wp:comment>' . "\n";
+            echo '        <wp:comment_id>' . $comment['id'] . '</wp:comment_id>' . "\n";
+            echo '        <wp:comment_author>' . htmlspecialchars($comment['author_name']) . '</wp:comment_author>' . "\n";
+            echo '        <wp:comment_author_email>' . htmlspecialchars($comment['author_email']) . '</wp:comment_author_email>' . "\n";
+            if ($comment['author_url']) {
+                echo '        <wp:comment_author_url>' . htmlspecialchars($comment['author_url']) . '</wp:comment_author_url>' . "\n";
+            }
+            echo '        <wp:comment_author_IP>' . htmlspecialchars($comment['ip_address'] ?? '') . '</wp:comment_author_IP>' . "\n";
+            echo '        <wp:comment_date_gmt>' . date('Y-m-d H:i:s', strtotime($comment['created_at'])) . '</wp:comment_date_gmt>' . "\n";
+            echo '        <wp:comment_content><![CDATA[' . $comment['content'] . ']]></wp:comment_content>' . "\n";
+
+            // Map status
+            $approved = ($comment['status'] === 'approved') ? '1' : '0';
+            echo '        <wp:comment_approved>' . $approved . '</wp:comment_approved>' . "\n";
+
+            if ($comment['parent_id']) {
+                echo '        <wp:comment_parent>' . $comment['parent_id'] . '</wp:comment_parent>' . "\n";
+            }
+            echo '      </wp:comment>' . "\n";
+        }
+
+        echo '    </item>' . "\n\n";
+    }
+
+    echo '  </channel>' . "\n";
+    echo '</rss>' . "\n";
+    exit;
+}
+
 jsonResponse(['error' => 'Invalid action'], 400);
