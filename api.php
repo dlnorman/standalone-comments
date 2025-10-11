@@ -175,36 +175,10 @@ function sendNotificationEmail($commentId, $pageUrl, $parentId, $authorName, $co
     $safeContent = sanitizeEmailContent($content);
     $safePageUrl = sanitizeEmailContent($pageUrl);
 
-    // Get all active subscribers for this page (excluding the comment author)
-    $stmt = $db->prepare("
-        SELECT email, token FROM subscriptions
-        WHERE page_url = ? AND active = 1 AND email != ?
-    ");
-    $stmt->execute([$pageUrl, $authorEmail]);
-    $subscribers = $stmt->fetchAll();
+    // Track who has been notified to prevent duplicates
+    $notifiedEmails = [];
 
-    // Send notification to all subscribers
-    foreach ($subscribers as $subscriber) {
-        $to = filter_var($subscriber['email'], FILTER_VALIDATE_EMAIL);
-        if (!$to) continue; // Skip invalid emails
-
-        $unsubscribeUrl = "https://" . $_SERVER['HTTP_HOST'] . "/comments/unsubscribe.php?token=" . $subscriber['token'];
-
-        $subject = "New comment on " . parse_url($pageUrl, PHP_URL_PATH);
-        $message = "Hello,\n\n";
-        $message .= "{$safeAuthorName} posted a new comment on {$safePageUrl}:\n\n";
-        $message .= "{$safeContent}\n\n";
-        $message .= "View and reply: {$safePageUrl}#comment-{$commentId}\n\n";
-        $message .= "---\n";
-        $message .= "To unsubscribe from notifications for this page: {$unsubscribeUrl}\n";
-
-        $headers = "From: noreply@" . $_SERVER['HTTP_HOST'] . "\r\n";
-        $headers .= "Reply-To: noreply@" . $_SERVER['HTTP_HOST'] . "\r\n";
-
-        @mail($to, $subject, $message, $headers);
-    }
-
-    // If this is a reply, also notify the parent comment author directly
+    // If this is a reply, notify the parent comment author first with personalized message
     if ($parentId !== null) {
         $stmt = $db->prepare("SELECT author_email, author_name FROM comments WHERE id = ?");
         $stmt->execute([$parentId]);
@@ -234,8 +208,45 @@ function sendNotificationEmail($commentId, $pageUrl, $parentId, $authorName, $co
                 $headers .= "Reply-To: noreply@" . $_SERVER['HTTP_HOST'] . "\r\n";
 
                 @mail($to, $subject, $message, $headers);
+
+                // Mark this email as notified
+                $notifiedEmails[] = $parent['author_email'];
             }
         }
+    }
+
+    // Get all active subscribers for this page (excluding the comment author and those already notified)
+    $stmt = $db->prepare("
+        SELECT email, token FROM subscriptions
+        WHERE page_url = ? AND active = 1 AND email != ?
+    ");
+    $stmt->execute([$pageUrl, $authorEmail]);
+    $subscribers = $stmt->fetchAll();
+
+    // Send notification to all subscribers who haven't been notified yet
+    foreach ($subscribers as $subscriber) {
+        // Skip if already notified
+        if (in_array($subscriber['email'], $notifiedEmails)) {
+            continue;
+        }
+
+        $to = filter_var($subscriber['email'], FILTER_VALIDATE_EMAIL);
+        if (!$to) continue; // Skip invalid emails
+
+        $unsubscribeUrl = "https://" . $_SERVER['HTTP_HOST'] . "/comments/unsubscribe.php?token=" . $subscriber['token'];
+
+        $subject = "New comment on " . parse_url($pageUrl, PHP_URL_PATH);
+        $message = "Hello,\n\n";
+        $message .= "{$safeAuthorName} posted a new comment on {$safePageUrl}:\n\n";
+        $message .= "{$safeContent}\n\n";
+        $message .= "View and reply: {$safePageUrl}#comment-{$commentId}\n\n";
+        $message .= "---\n";
+        $message .= "To unsubscribe from notifications for this page: {$unsubscribeUrl}\n";
+
+        $headers = "From: noreply@" . $_SERVER['HTTP_HOST'] . "\r\n";
+        $headers .= "Reply-To: noreply@" . $_SERVER['HTTP_HOST'] . "\r\n";
+
+        @mail($to, $subject, $message, $headers);
     }
 
     // Notify admin of new comment
