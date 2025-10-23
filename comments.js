@@ -43,17 +43,20 @@ class CommentSystem {
         const replyText = parentAuthor ? `Reply to ${this.escapeHtml(parentAuthor)}` : 'Leave a Comment';
         const formId = parentId ? `reply-form-${parentId}` : 'main-comment-form';
 
+        // Get saved user info from localStorage
+        const savedInfo = this.getSavedUserInfo();
+
         return `
             <form class="comment-form" id="${formId}" data-parent-id="${parentId || ''}">
                 <h4>${replyText}</h4>
                 <div class="form-group">
-                    <input type="text" name="author_name" placeholder="Name *" required class="form-input">
+                    <input type="text" name="author_name" placeholder="Name *" required class="form-input" value="${this.escapeHtml(savedInfo.name)}">
                 </div>
                 <div class="form-group">
-                    <input type="email" name="author_email" placeholder="Email *" required class="form-input">
+                    <input type="email" name="author_email" placeholder="Email *" required class="form-input" value="${this.escapeHtml(savedInfo.email)}">
                 </div>
                 <div class="form-group">
-                    <input type="url" name="author_url" placeholder="Website (optional)" class="form-input">
+                    <input type="url" name="author_url" placeholder="Website (optional)" class="form-input" value="${this.escapeHtml(savedInfo.url)}">
                 </div>
                 <div class="form-group" style="position: absolute; left: -9999px;">
                     <input type="text" name="website" placeholder="Website" class="form-input" tabindex="-1" autocomplete="off">
@@ -65,6 +68,12 @@ class CommentSystem {
                     <label class="checkbox-label">
                         <input type="checkbox" name="subscribe" value="1" checked>
                         <span>Notify me of follow-up comments on this page</span>
+                    </label>
+                </div>
+                <div class="form-group">
+                    <label class="checkbox-label">
+                        <input type="checkbox" name="remember_me" value="1" ${savedInfo.remember ? 'checked' : ''}>
+                        <span>Remember my name, email, and website for next time</span>
                     </label>
                 </div>
                 <div class="form-actions">
@@ -94,12 +103,17 @@ class CommentSystem {
         messageEl.textContent = 'Posting...';
         messageEl.className = 'form-message info';
 
+        const authorName = formData.get('author_name');
+        const authorEmail = formData.get('author_email');
+        const authorUrl = formData.get('author_url');
+        const rememberMe = formData.get('remember_me') ? true : false;
+
         const data = {
             page_url: this.pageUrl,
             parent_id: form.dataset.parentId || null,
-            author_name: formData.get('author_name'),
-            author_email: formData.get('author_email'),
-            author_url: formData.get('author_url'),
+            author_name: authorName,
+            author_email: authorEmail,
+            author_url: authorUrl,
             content: formData.get('content'),
             subscribe: formData.get('subscribe') ? true : false
         };
@@ -116,9 +130,20 @@ class CommentSystem {
             const result = await response.json();
 
             if (response.ok) {
+                // Save user info if remember me is checked
+                this.saveUserInfo(authorName, authorEmail, authorUrl, rememberMe);
+
                 messageEl.textContent = result.message;
                 messageEl.className = 'form-message success';
                 form.reset();
+
+                // Restore saved info after reset if remember me was checked
+                if (rememberMe) {
+                    form.querySelector('input[name="author_name"]').value = authorName;
+                    form.querySelector('input[name="author_email"]').value = authorEmail;
+                    form.querySelector('input[name="author_url"]').value = authorUrl;
+                    form.querySelector('input[name="remember_me"]').checked = true;
+                }
 
                 // Reload comments
                 setTimeout(() => {
@@ -224,6 +249,40 @@ class CommentSystem {
         const div = document.createElement('div');
         div.textContent = text;
         return div.innerHTML;
+    }
+
+    getSavedUserInfo() {
+        try {
+            const saved = localStorage.getItem('comment_user_info');
+            if (saved) {
+                const info = JSON.parse(saved);
+                return {
+                    name: info.name || '',
+                    email: info.email || '',
+                    url: info.url || '',
+                    remember: true
+                };
+            }
+        } catch (e) {
+            console.error('Error loading saved user info:', e);
+        }
+        return { name: '', email: '', url: '', remember: false };
+    }
+
+    saveUserInfo(name, email, url, remember) {
+        try {
+            if (remember) {
+                localStorage.setItem('comment_user_info', JSON.stringify({
+                    name: name,
+                    email: email,
+                    url: url
+                }));
+            } else {
+                localStorage.removeItem('comment_user_info');
+            }
+        } catch (e) {
+            console.error('Error saving user info:', e);
+        }
     }
 }
 
