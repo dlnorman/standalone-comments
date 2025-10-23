@@ -46,6 +46,18 @@ define('ALLOWED_ORIGINS', [
 // Timezone - IMPORTANT: Set to your local timezone
 date_default_timezone_set('America/Edmonton');
 
-// Error reporting (disable in production)
+// Error reporting (disable display in production, but log errors)
 error_reporting(E_ALL);
 ini_set('display_errors', '0');
+
+// Enable error logging
+ini_set('log_errors', '1');
+
+// Ensure logs directory exists
+$logsDir = __DIR__ . '/logs';
+if (!is_dir($logsDir)) {
+    @mkdir($logsDir, 0755, true);
+}
+
+// Set error log path
+ini_set('error_log', $logsDir . '/php-errors.log');

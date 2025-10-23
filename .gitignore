@@ -6,7 +6,10 @@ db/*
 # Protect backups
 backups/
 
-# Local development files
+# Protect logs directory
+logs/
 *.log
+
+# Local development files
 .DS_Store
 dev.marker

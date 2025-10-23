@@ -11,6 +11,7 @@ header('X-Content-Type-Options: nosniff');
 header('X-Frame-Options: DENY');
 header('X-XSS-Protection: 1; mode=block');
 header('Referrer-Policy: strict-origin-when-cross-origin');
+header("Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'");
 
 // Cache control - prevent caching of API responses
 header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
@@ -72,6 +73,20 @@ function isAdmin() {
         return $result && $result['value'] === $token;
     }
     return false;
+}
+
+function generateCSRFToken() {
+    if (!isset($_COOKIE['csrf_token'])) {
+        $token = bin2hex(random_bytes(32));
+        $isSecure = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') || $_SERVER['SERVER_PORT'] == 443;
+        setcookie('csrf_token', $token, time() + SESSION_LIFETIME, '/comments/', '', $isSecure, false); // Not HTTPOnly - JS needs to read it
+        return $token;
+    }
+    return $_COOKIE['csrf_token'];
+}
+
+function validateCSRFToken($token) {
+    return isset($_COOKIE['csrf_token']) && hash_equals($_COOKIE['csrf_token'], $token);
 }
 
 function checkRateLimit($ipAddress, $email) {
@@ -466,6 +481,12 @@ if ($method === 'POST' && $action === 'post') {
     ], 201);
 }
 
+// GET /api.php?action=csrf_token
+if ($method === 'GET' && $action === 'csrf_token') {
+    $token = generateCSRFToken();
+    jsonResponse(['token' => $token]);
+}
+
 // POST /api.php?action=login (admin)
 if ($method === 'POST' && $action === 'login') {
     $input = getInput();
@@ -485,7 +506,11 @@ if ($method === 'POST' && $action === 'login') {
         // Set secure cookie (HTTPS only in production)
         $isSecure = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') || $_SERVER['SERVER_PORT'] == 443;
         setcookie(ADMIN_TOKEN_COOKIE, $token, time() + SESSION_LIFETIME, '/comments/', '', $isSecure, true);
-        jsonResponse(['success' => true, 'message' => 'Logged in successfully']);
+
+        // Generate CSRF token for this session
+        $csrfToken = generateCSRFToken();
+
+        jsonResponse(['success' => true, 'message' => 'Logged in successfully', 'csrf_token' => $csrfToken]);
     } else {
         jsonResponse(['error' => 'Invalid password'], 401);
     }
@@ -497,8 +522,15 @@ if ($method === 'PUT' && $action === 'moderate') {
         jsonResponse(['error' => 'Unauthorized'], 401);
     }
 
-    $id = $_GET['id'] ?? '';
     $input = getInput();
+
+    // Validate CSRF token
+    $csrfToken = $input['csrf_token'] ?? '';
+    if (!validateCSRFToken($csrfToken)) {
+        jsonResponse(['error' => 'Invalid CSRF token'], 403);
+    }
+
+    $id = $_GET['id'] ?? '';
     $status = $input['status'] ?? '';
 
     if (!in_array($status, ['approved', 'spam', 'deleted'])) {
@@ -515,6 +547,12 @@ if ($method === 'PUT' && $action === 'moderate') {
 if ($method === 'DELETE' && $action === 'delete') {
     if (!isAdmin()) {
         jsonResponse(['error' => 'Unauthorized'], 401);
+    }
+
+    // Validate CSRF token from query parameter (since DELETE can't have body)
+    $csrfToken = $_GET['csrf_token'] ?? '';
+    if (!validateCSRFToken($csrfToken)) {
+        jsonResponse(['error' => 'Invalid CSRF token'], 403);
     }
 
     $id = $_GET['id'] ?? '';
@@ -582,6 +620,13 @@ if ($method === 'POST' && $action === 'toggle_subscription') {
     }
 
     $input = getInput();
+
+    // Validate CSRF token
+    $csrfToken = $input['csrf_token'] ?? '';
+    if (!validateCSRFToken($csrfToken)) {
+        jsonResponse(['error' => 'Invalid CSRF token'], 403);
+    }
+
     $token = $input['token'] ?? '';
     $active = $input['active'] ?? 1;
 
@@ -595,6 +640,12 @@ if ($method === 'POST' && $action === 'toggle_subscription') {
 if ($method === 'DELETE' && $action === 'delete_subscription') {
     if (!isAdmin()) {
         jsonResponse(['error' => 'Unauthorized'], 401);
+    }
+
+    // Validate CSRF token from query parameter
+    $csrfToken = $_GET['csrf_token'] ?? '';
+    if (!validateCSRFToken($csrfToken)) {
+        jsonResponse(['error' => 'Invalid CSRF token'], 403);
     }
 
     $token = $_GET['token'] ?? '';
@@ -611,6 +662,13 @@ if ($method === 'POST' && $action === 'test_email') {
     }
 
     $input = getInput();
+
+    // Validate CSRF token
+    $csrfToken = $input['csrf_token'] ?? '';
+    if (!validateCSRFToken($csrfToken)) {
+        jsonResponse(['error' => 'Invalid CSRF token'], 403);
+    }
+
     $testEmail = $input['email'] ?? '';
     $pageUrl = $input['page_url'] ?? '/';
 

@@ -33,6 +33,15 @@ RedirectMatch 403 /comments/utils/.*
 # Alternative method for blocking backups directory
 RedirectMatch 403 /comments/backups/.*
 
+# Block access to 'logs' directory and all contents
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteRule ^logs/ - [F,L]
+</IfModule>
+
+# Alternative method for blocking logs directory
+RedirectMatch 403 /comments/logs/.*
+
 # Protect sensitive file types
 <FilesMatch "\.(sql|md|log|sh|bak|backup)$">
     Require all denied

@@ -17,8 +17,9 @@ function getDatabase() {
 
 function tableExists($db, $tableName) {
     try {
-        $result = $db->query("SELECT name FROM sqlite_master WHERE type='table' AND name='{$tableName}'");
-        return $result->fetch() !== false;
+        $stmt = $db->prepare("SELECT name FROM sqlite_master WHERE type='table' AND name=?");
+        $stmt->execute([$tableName]);
+        return $stmt->fetch() !== false;
     } catch (PDOException $e) {
         return false;
     }
