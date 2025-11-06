@@ -486,6 +486,43 @@
         let allComments = [];
         let currentPage = 1;
         const commentsPerPage = 20;
+        let csrfToken = null;
+
+        // Get CSRF token from cookie
+        function getCSRFToken() {
+            const name = 'csrf_token=';
+            const decodedCookie = decodeURIComponent(document.cookie);
+            const ca = decodedCookie.split(';');
+            for (let i = 0; i < ca.length; i++) {
+                let c = ca[i];
+                while (c.charAt(0) === ' ') {
+                    c = c.substring(1);
+                }
+                if (c.indexOf(name) === 0) {
+                    return c.substring(name.length, c.length);
+                }
+            }
+            return null;
+        }
+
+        // Fetch CSRF token if not in cookie
+        async function ensureCSRFToken() {
+            if (!csrfToken) {
+                csrfToken = getCSRFToken();
+            }
+            if (!csrfToken) {
+                try {
+                    const response = await fetch(`${API_URL}?action=csrf_token`, {
+                        credentials: 'include'
+                    });
+                    const data = await response.json();
+                    csrfToken = data.token;
+                } catch (error) {
+                    console.error('Failed to fetch CSRF token:', error);
+                }
+            }
+            return csrfToken;
+        }
 
         // Check if already logged in on page load
         async function checkAuth() {
@@ -496,6 +533,7 @@
 
                 if (response.ok) {
                     // Already authenticated
+                    await ensureCSRFToken();
                     document.getElementById('login-section').style.display = 'none';
                     document.getElementById('admin-section').style.display = 'block';
                     loadDashboard();
@@ -525,6 +563,8 @@
                 const result = await response.json();
 
                 if (response.ok) {
+                    // Store CSRF token from login response
+                    csrfToken = result.csrf_token || getCSRFToken();
                     document.getElementById('login-section').style.display = 'none';
                     document.getElementById('admin-section').style.display = 'block';
                     loadDashboard();
@@ -666,6 +706,9 @@
             const originalHTML = commentEl.innerHTML;
 
             try {
+                // Ensure we have CSRF token
+                await ensureCSRFToken();
+
                 // Show loading state
                 commentEl.style.opacity = '0.5';
                 commentEl.innerHTML = `<p style="text-align: center; padding: 2rem;">Processing...</p>`;
@@ -677,7 +720,7 @@
                         'Cache-Control': 'no-cache'
                     },
                     credentials: 'include',
-                    body: JSON.stringify({ status })
+                    body: JSON.stringify({ status, csrf_token: csrfToken })
                 });
 
                 const result = await response.json();
@@ -710,16 +753,23 @@
             }
 
             try {
-                const response = await fetch(`${API_URL}?action=delete&id=${id}`, {
+                // Ensure we have CSRF token
+                await ensureCSRFToken();
+
+                const response = await fetch(`${API_URL}?action=delete&id=${id}&csrf_token=${encodeURIComponent(csrfToken)}`, {
                     method: 'DELETE',
                     credentials: 'include'
                 });
 
                 if (response.ok) {
                     loadAllComments();
+                } else {
+                    const result = await response.json();
+                    alert(`Failed to delete: ${result.error || 'Unknown error'}`);
                 }
             } catch (error) {
                 console.error('Error deleting comment:', error);
+                alert('Network error while deleting comment');
             }
         }
 

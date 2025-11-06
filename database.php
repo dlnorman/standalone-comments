@@ -1,13 +1,44 @@
 <?php
 // Database helper functions
 
-require_once 'config.php';
+// Load config.php if it exists, otherwise use defaults
+if (file_exists(__DIR__ . '/config.php')) {
+    require_once 'config.php';
+}
+
+// Define DB_PATH if not already defined
+if (!defined('DB_PATH')) {
+    // Auto-detect environment
+    $isLocalhost = false;
+    if (getenv('COMMENT_ENV') === 'development') {
+        $isLocalhost = true;
+    } elseif (isset($_SERVER['HTTP_HOST'])) {
+        $host = $_SERVER['HTTP_HOST'];
+        $isLocalhost = (
+            strpos($host, 'localhost') !== false ||
+            strpos($host, '127.0.0.1') !== false ||
+            strpos($host, '.local') !== false ||
+            strpos($host, ':1313') !== false
+        );
+    } elseif (php_sapi_name() === 'cli-server') {
+        $isLocalhost = true;
+    }
+
+    define('DB_PATH', __DIR__ . ($isLocalhost ? '/db/comments-dev.db' : '/db/comments.db'));
+}
 
 function getDatabase() {
     try {
         $db = new PDO('sqlite:' . DB_PATH);
         $db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
         $db->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
+        // Enable foreign key constraints in SQLite
+        $db->exec('PRAGMA foreign_keys = ON');
+        // Set busy timeout to 30 seconds to handle database locks
+        $db->setAttribute(PDO::ATTR_TIMEOUT, 30);
+        $db->exec('PRAGMA busy_timeout = 30000');
+        // Enable WAL mode for better concurrency
+        $db->exec('PRAGMA journal_mode = WAL');
         return $db;
     } catch (PDOException $e) {
         error_log('Database connection failed: ' . $e->getMessage());

@@ -1,7 +1,63 @@
 <?php
 // Comment System API
 
-require_once 'config.php';
+// Load config.php if it exists, otherwise use defaults
+if (file_exists(__DIR__ . '/config.php')) {
+    require_once 'config.php';
+}
+
+// Define constants if not already defined by config.php
+if (!defined('DB_PATH')) {
+    // Auto-detect environment
+    $isLocalhost = false;
+    if (getenv('COMMENT_ENV') === 'development') {
+        $isLocalhost = true;
+    } elseif (isset($_SERVER['HTTP_HOST'])) {
+        $host = $_SERVER['HTTP_HOST'];
+        $isLocalhost = (
+            strpos($host, 'localhost') !== false ||
+            strpos($host, '127.0.0.1') !== false ||
+            strpos($host, '.local') !== false ||
+            strpos($host, ':1313') !== false
+        );
+    } elseif (php_sapi_name() === 'cli-server') {
+        $isLocalhost = true;
+    }
+
+    define('DB_PATH', __DIR__ . ($isLocalhost ? '/db/comments-dev.db' : '/db/comments.db'));
+}
+
+if (!defined('ADMIN_TOKEN_COOKIE')) {
+    define('ADMIN_TOKEN_COOKIE', 'comment_admin_token');
+}
+
+if (!defined('SESSION_LIFETIME')) {
+    define('SESSION_LIFETIME', 3600 * 24 * 30); // 30 days
+}
+
+if (!defined('ALLOWED_ORIGINS')) {
+    // Default CORS - allow all origins (can be restricted in config.php)
+    define('ALLOWED_ORIGINS', ['*']);
+}
+
+// Set timezone if not already set
+if (!ini_get('date.timezone')) {
+    date_default_timezone_set('UTC');
+}
+
+// Error logging setup
+if (!ini_get('error_log')) {
+    error_reporting(E_ALL);
+    ini_set('display_errors', '0');
+    ini_set('log_errors', '1');
+
+    $logsDir = __DIR__ . '/logs';
+    if (!is_dir($logsDir)) {
+        @mkdir($logsDir, 0755, true);
+    }
+    ini_set('error_log', $logsDir . '/php-errors.log');
+}
+
 require_once 'database.php';
 
 header('Content-Type: application/json');
@@ -21,9 +77,13 @@ header('Expires: 0');
 
 // CORS headers
 $origin = $_SERVER['HTTP_ORIGIN'] ?? '';
-if (in_array($origin, ALLOWED_ORIGINS)) {
-    header("Access-Control-Allow-Origin: $origin");
-    header('Access-Control-Allow-Credentials: true');
+if (in_array('*', ALLOWED_ORIGINS) || in_array($origin, ALLOWED_ORIGINS)) {
+    if (in_array('*', ALLOWED_ORIGINS)) {
+        header("Access-Control-Allow-Origin: *");
+    } else {
+        header("Access-Control-Allow-Origin: $origin");
+        header('Access-Control-Allow-Credentials: true');
+    }
     header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
     header('Access-Control-Allow-Headers: Content-Type, Authorization');
 }
@@ -193,20 +253,30 @@ function sanitizeEmailContent($input) {
 }
 
 function queueEmail($commentId, $recipientEmail, $recipientName, $emailType, $subject, $body) {
-    $db = getDatabase();
+    try {
+        $db = getDatabase();
+        if (!$db) {
+            error_log("Failed to get database connection for email queue");
+            return false;
+        }
 
-    // Validate email address before queuing
-    if (!filter_var($recipientEmail, FILTER_VALIDATE_EMAIL)) {
-        error_log("Invalid email address, not queuing: $recipientEmail");
+        // Validate email address before queuing
+        if (!filter_var($recipientEmail, FILTER_VALIDATE_EMAIL)) {
+            error_log("Invalid email address, not queuing: $recipientEmail");
+            return false;
+        }
+
+        $stmt = $db->prepare("
+            INSERT INTO email_queue (comment_id, recipient_email, recipient_name, email_type, subject, body, status)
+            VALUES (?, ?, ?, ?, ?, ?, 'pending')
+        ");
+
+        return $stmt->execute([$commentId, $recipientEmail, $recipientName, $emailType, $subject, $body]);
+    } catch (PDOException $e) {
+        error_log("Failed to queue email: " . $e->getMessage());
+        // Don't throw - just log and return false so comment posting can continue
         return false;
     }
-
-    $stmt = $db->prepare("
-        INSERT INTO email_queue (comment_id, recipient_email, recipient_name, email_type, subject, body, status)
-        VALUES (?, ?, ?, ?, ?, ?, 'pending')
-    ");
-
-    return $stmt->execute([$commentId, $recipientEmail, $recipientName, $emailType, $subject, $body]);
 }
 
 function checkLoginRateLimit($ipAddress) {

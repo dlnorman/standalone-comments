@@ -401,6 +401,43 @@
     <script>
         const API_URL = 'api.php';
         let allSubscriptions = [];
+        let csrfToken = null;
+
+        // Get CSRF token from cookie
+        function getCSRFToken() {
+            const name = 'csrf_token=';
+            const decodedCookie = decodeURIComponent(document.cookie);
+            const ca = decodedCookie.split(';');
+            for (let i = 0; i < ca.length; i++) {
+                let c = ca[i];
+                while (c.charAt(0) === ' ') {
+                    c = c.substring(1);
+                }
+                if (c.indexOf(name) === 0) {
+                    return c.substring(name.length, c.length);
+                }
+            }
+            return null;
+        }
+
+        // Fetch CSRF token if not in cookie
+        async function ensureCSRFToken() {
+            if (!csrfToken) {
+                csrfToken = getCSRFToken();
+            }
+            if (!csrfToken) {
+                try {
+                    const response = await fetch(`${API_URL}?action=csrf_token`, {
+                        credentials: 'include'
+                    });
+                    const data = await response.json();
+                    csrfToken = data.token;
+                } catch (error) {
+                    console.error('Failed to fetch CSRF token:', error);
+                }
+            }
+            return csrfToken;
+        }
 
         // Check if already logged in on page load
         async function checkAuth() {
@@ -410,6 +447,7 @@
                 });
 
                 if (response.ok) {
+                    await ensureCSRFToken();
                     document.getElementById('login-section').style.display = 'none';
                     document.getElementById('admin-section').style.display = 'block';
                     loadDashboard();
@@ -438,6 +476,8 @@
                 const result = await response.json();
 
                 if (response.ok) {
+                    // Store CSRF token from login response
+                    csrfToken = result.csrf_token || getCSRFToken();
                     document.getElementById('login-section').style.display = 'none';
                     document.getElementById('admin-section').style.display = 'block';
                     loadDashboard();
@@ -522,17 +562,21 @@
 
         async function toggleSubscription(token, active) {
             try {
+                // Ensure we have CSRF token
+                await ensureCSRFToken();
+
                 const response = await fetch(`${API_URL}?action=toggle_subscription`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     credentials: 'include',
-                    body: JSON.stringify({ token, active })
+                    body: JSON.stringify({ token, active, csrf_token: csrfToken })
                 });
 
                 if (response.ok) {
                     loadSubscriptions();
                 } else {
-                    alert('Failed to update subscription');
+                    const result = await response.json();
+                    alert(`Failed to update subscription: ${result.error || 'Unknown error'}`);
                 }
             } catch (error) {
                 console.error('Error toggling subscription:', error);
@@ -546,7 +590,10 @@
             }
 
             try {
-                const response = await fetch(`${API_URL}?action=delete_subscription&token=${token}`, {
+                // Ensure we have CSRF token
+                await ensureCSRFToken();
+
+                const response = await fetch(`${API_URL}?action=delete_subscription&token=${token}&csrf_token=${encodeURIComponent(csrfToken)}`, {
                     method: 'DELETE',
                     credentials: 'include'
                 });
@@ -554,7 +601,8 @@
                 if (response.ok) {
                     loadSubscriptions();
                 } else {
-                    alert('Failed to delete subscription');
+                    const result = await response.json();
+                    alert(`Failed to delete subscription: ${result.error || 'Unknown error'}`);
                 }
             } catch (error) {
                 console.error('Error deleting subscription:', error);
@@ -575,13 +623,17 @@
             messageEl.innerHTML = '<div class="message info">Sending test email...</div>';
 
             try {
+                // Ensure we have CSRF token
+                await ensureCSRFToken();
+
                 const response = await fetch(`${API_URL}?action=test_email`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     credentials: 'include',
                     body: JSON.stringify({
                         email,
-                        page_url: pageUrl
+                        page_url: pageUrl,
+                        csrf_token: csrfToken
                     })
                 });
 
