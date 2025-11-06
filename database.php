@@ -57,6 +57,13 @@ function initDatabase() {
             CREATE INDEX IF NOT EXISTS idx_status ON comments(status);
             CREATE INDEX IF NOT EXISTS idx_created_at ON comments(created_at);
 
+            CREATE INDEX IF NOT EXISTS idx_ip_address ON comments(ip_address);
+            CREATE INDEX IF NOT EXISTS idx_author_email ON comments(author_email);
+            CREATE INDEX IF NOT EXISTS idx_rate_limit_ip ON comments(ip_address, created_at);
+            CREATE INDEX IF NOT EXISTS idx_rate_limit_email ON comments(author_email, created_at);
+            CREATE INDEX IF NOT EXISTS idx_page_url_status ON comments(page_url, status);
+            CREATE INDEX IF NOT EXISTS idx_author_email_status ON comments(author_email, status);
+
             CREATE TABLE IF NOT EXISTS settings (
                 key TEXT PRIMARY KEY,
                 value TEXT NOT NULL
@@ -83,6 +90,47 @@ function initDatabase() {
             CREATE INDEX IF NOT EXISTS idx_sub_page_url ON subscriptions(page_url);
             CREATE INDEX IF NOT EXISTS idx_sub_email ON subscriptions(email);
             CREATE INDEX IF NOT EXISTS idx_sub_token ON subscriptions(token);
+
+            CREATE TABLE IF NOT EXISTS email_queue (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                comment_id INTEGER,
+                recipient_email TEXT NOT NULL,
+                recipient_name TEXT,
+                email_type TEXT NOT NULL,
+                subject TEXT NOT NULL,
+                body TEXT NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                sent_at DATETIME,
+                status TEXT DEFAULT 'pending' CHECK(status IN ('pending', 'sent', 'failed')),
+                attempts INTEGER DEFAULT 0,
+                last_error TEXT,
+                FOREIGN KEY (comment_id) REFERENCES comments(id) ON DELETE CASCADE
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_email_queue_status ON email_queue(status, created_at);
+            CREATE INDEX IF NOT EXISTS idx_email_queue_comment ON email_queue(comment_id);
+
+            CREATE TABLE IF NOT EXISTS login_attempts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ip_address TEXT NOT NULL,
+                attempted_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                success INTEGER DEFAULT 0
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_login_attempts_ip ON login_attempts(ip_address, attempted_at);
+
+            CREATE TABLE IF NOT EXISTS sessions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                token TEXT UNIQUE NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                expires_at DATETIME NOT NULL,
+                last_activity DATETIME DEFAULT CURRENT_TIMESTAMP,
+                ip_address TEXT,
+                user_agent TEXT
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_session_token ON sessions(token);
+            CREATE INDEX IF NOT EXISTS idx_session_expires ON sessions(expires_at);
         ";
     }
 
@@ -117,6 +165,80 @@ function migrateDatabase() {
             $db->exec("CREATE INDEX IF NOT EXISTS idx_sub_email ON subscriptions(email)");
             $db->exec("CREATE INDEX IF NOT EXISTS idx_sub_token ON subscriptions(token)");
             error_log('Database migration: subscriptions table created');
+        }
+
+        // Add performance indexes (safe to run multiple times due to IF NOT EXISTS)
+        $db->exec("CREATE INDEX IF NOT EXISTS idx_ip_address ON comments(ip_address)");
+        $db->exec("CREATE INDEX IF NOT EXISTS idx_author_email ON comments(author_email)");
+        $db->exec("CREATE INDEX IF NOT EXISTS idx_rate_limit_ip ON comments(ip_address, created_at)");
+        $db->exec("CREATE INDEX IF NOT EXISTS idx_rate_limit_email ON comments(author_email, created_at)");
+        $db->exec("CREATE INDEX IF NOT EXISTS idx_page_url_status ON comments(page_url, status)");
+        $db->exec("CREATE INDEX IF NOT EXISTS idx_author_email_status ON comments(author_email, status)");
+
+        // Create email queue table if it doesn't exist
+        if (!tableExists($db, 'email_queue')) {
+            $db->exec("
+                CREATE TABLE IF NOT EXISTS email_queue (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    comment_id INTEGER,
+                    recipient_email TEXT NOT NULL,
+                    recipient_name TEXT,
+                    email_type TEXT NOT NULL,
+                    subject TEXT NOT NULL,
+                    body TEXT NOT NULL,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    sent_at DATETIME,
+                    status TEXT DEFAULT 'pending' CHECK(status IN ('pending', 'sent', 'failed')),
+                    attempts INTEGER DEFAULT 0,
+                    last_error TEXT,
+                    FOREIGN KEY (comment_id) REFERENCES comments(id) ON DELETE CASCADE
+                )
+            ");
+            $db->exec("CREATE INDEX IF NOT EXISTS idx_email_queue_status ON email_queue(status, created_at)");
+            $db->exec("CREATE INDEX IF NOT EXISTS idx_email_queue_comment ON email_queue(comment_id)");
+            error_log('Database migration: email_queue table created');
+        }
+
+        // Create login attempts table if it doesn't exist
+        if (!tableExists($db, 'login_attempts')) {
+            $db->exec("
+                CREATE TABLE IF NOT EXISTS login_attempts (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    ip_address TEXT NOT NULL,
+                    attempted_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    success INTEGER DEFAULT 0
+                )
+            ");
+            $db->exec("CREATE INDEX IF NOT EXISTS idx_login_attempts_ip ON login_attempts(ip_address, attempted_at)");
+            error_log('Database migration: login_attempts table created');
+        }
+
+        // Create sessions table if it doesn't exist
+        if (!tableExists($db, 'sessions')) {
+            $db->exec("
+                CREATE TABLE IF NOT EXISTS sessions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    token TEXT UNIQUE NOT NULL,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    expires_at DATETIME NOT NULL,
+                    last_activity DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    ip_address TEXT,
+                    user_agent TEXT
+                )
+            ");
+            $db->exec("CREATE INDEX IF NOT EXISTS idx_session_token ON sessions(token)");
+            $db->exec("CREATE INDEX IF NOT EXISTS idx_session_expires ON sessions(expires_at)");
+            error_log('Database migration: sessions table created');
+        }
+
+        // Clean up expired sessions (5% chance to avoid overhead on every request)
+        if (rand(1, 20) === 1) {
+            $db->exec("DELETE FROM sessions WHERE expires_at < datetime('now')");
+        }
+
+        // Clean up old login attempts (5% chance)
+        if (rand(1, 20) === 1) {
+            $db->exec("DELETE FROM login_attempts WHERE attempted_at < datetime('now', '-7 days')");
         }
 
         return true;

@@ -65,8 +65,27 @@ function sanitizeUrl($url) {
 function isAdmin() {
     if (isset($_COOKIE[ADMIN_TOKEN_COOKIE])) {
         $token = $_COOKIE[ADMIN_TOKEN_COOKIE];
-        // Simple token validation - in production use more secure method
         $db = getDatabase();
+
+        // Check if session exists and is not expired
+        $stmt = $db->prepare("
+            SELECT id FROM sessions
+            WHERE token = ? AND expires_at > datetime('now')
+        ");
+        $stmt->execute([$token]);
+        $session = $stmt->fetch();
+
+        if ($session) {
+            // Update last activity timestamp
+            $updateStmt = $db->prepare("
+                UPDATE sessions SET last_activity = datetime('now') WHERE id = ?
+            ");
+            $updateStmt->execute([$session['id']]);
+
+            return true;
+        }
+
+        // Fallback to old token system for backward compatibility
         $stmt = $db->prepare("SELECT value FROM settings WHERE key = 'admin_token'");
         $stmt->execute();
         $result = $stmt->fetch();
@@ -173,6 +192,52 @@ function sanitizeEmailContent($input) {
     return str_replace(["\r", "\n", "%0a", "%0d", "\x0A", "\x0D"], '', $input);
 }
 
+function queueEmail($commentId, $recipientEmail, $recipientName, $emailType, $subject, $body) {
+    $db = getDatabase();
+
+    // Validate email address before queuing
+    if (!filter_var($recipientEmail, FILTER_VALIDATE_EMAIL)) {
+        error_log("Invalid email address, not queuing: $recipientEmail");
+        return false;
+    }
+
+    $stmt = $db->prepare("
+        INSERT INTO email_queue (comment_id, recipient_email, recipient_name, email_type, subject, body, status)
+        VALUES (?, ?, ?, ?, ?, ?, 'pending')
+    ");
+
+    return $stmt->execute([$commentId, $recipientEmail, $recipientName, $emailType, $subject, $body]);
+}
+
+function checkLoginRateLimit($ipAddress) {
+    $db = getDatabase();
+
+    // Allow 5 login attempts per hour per IP
+    $stmt = $db->prepare("
+        SELECT COUNT(*) as count FROM login_attempts
+        WHERE ip_address = ? AND attempted_at > datetime('now', '-1 hour')
+    ");
+    $stmt->execute([$ipAddress]);
+    $result = $stmt->fetch();
+
+    if ($result['count'] >= 5) {
+        return ['limited' => true, 'reason' => 'Too many login attempts. Please try again later.'];
+    }
+
+    return ['limited' => false];
+}
+
+function recordLoginAttempt($ipAddress, $success) {
+    $db = getDatabase();
+
+    $stmt = $db->prepare("
+        INSERT INTO login_attempts (ip_address, success, attempted_at)
+        VALUES (?, ?, datetime('now'))
+    ");
+
+    return $stmt->execute([$ipAddress, $success ? 1 : 0]);
+}
+
 function sendNotificationEmail($commentId, $pageUrl, $parentId, $authorName, $content, $authorEmail) {
     $db = getDatabase();
 
@@ -201,32 +266,28 @@ function sendNotificationEmail($commentId, $pageUrl, $parentId, $authorName, $co
 
         if ($parent && $parent['author_email'] && $parent['author_email'] !== $authorEmail) {
             $safeParentName = sanitizeEmailContent($parent['author_name']);
-            $to = filter_var($parent['author_email'], FILTER_VALIDATE_EMAIL);
-            if ($to) {
-                // Get unsubscribe token for parent
-                $stmt = $db->prepare("SELECT token FROM subscriptions WHERE page_url = ? AND email = ?");
-                $stmt->execute([$pageUrl, $parent['author_email']]);
-                $subData = $stmt->fetch();
-                $unsubscribeUrl = $subData ? "https://" . $_SERVER['HTTP_HOST'] . "/comments/unsubscribe.php?token=" . $subData['token'] : "";
 
-                $subject = "New reply to your comment";
-                $message = "Hello {$safeParentName},\n\n";
-                $message .= "{$safeAuthorName} replied to your comment on {$safePageUrl}:\n\n";
-                $message .= "{$safeContent}\n\n";
-                $message .= "View and reply: {$safePageUrl}#comment-{$commentId}\n\n";
-                if ($unsubscribeUrl) {
-                    $message .= "---\n";
-                    $message .= "To unsubscribe from notifications: {$unsubscribeUrl}\n";
-                }
+            // Get unsubscribe token for parent
+            $stmt = $db->prepare("SELECT token FROM subscriptions WHERE page_url = ? AND email = ?");
+            $stmt->execute([$pageUrl, $parent['author_email']]);
+            $subData = $stmt->fetch();
+            $unsubscribeUrl = $subData ? "https://" . $_SERVER['HTTP_HOST'] . "/comments/unsubscribe.php?token=" . $subData['token'] : "";
 
-                $headers = "From: noreply@" . $_SERVER['HTTP_HOST'] . "\r\n";
-                $headers .= "Reply-To: noreply@" . $_SERVER['HTTP_HOST'] . "\r\n";
-
-                @mail($to, $subject, $message, $headers);
-
-                // Mark this email as notified
-                $notifiedEmails[] = $parent['author_email'];
+            $subject = "New reply to your comment";
+            $message = "Hello {$safeParentName},\n\n";
+            $message .= "{$safeAuthorName} replied to your comment on {$safePageUrl}:\n\n";
+            $message .= "{$safeContent}\n\n";
+            $message .= "View and reply: {$safePageUrl}#comment-{$commentId}\n\n";
+            if ($unsubscribeUrl) {
+                $message .= "---\n";
+                $message .= "To unsubscribe from notifications: {$unsubscribeUrl}\n";
             }
+
+            // Queue email instead of sending immediately
+            queueEmail($commentId, $parent['author_email'], $safeParentName, 'parent_reply', $subject, $message);
+
+            // Mark this email as notified
+            $notifiedEmails[] = $parent['author_email'];
         }
     }
 
@@ -238,15 +299,12 @@ function sendNotificationEmail($commentId, $pageUrl, $parentId, $authorName, $co
     $stmt->execute([$pageUrl, $authorEmail]);
     $subscribers = $stmt->fetchAll();
 
-    // Send notification to all subscribers who haven't been notified yet
+    // Queue notification emails to all subscribers who haven't been notified yet
     foreach ($subscribers as $subscriber) {
         // Skip if already notified
         if (in_array($subscriber['email'], $notifiedEmails)) {
             continue;
         }
-
-        $to = filter_var($subscriber['email'], FILTER_VALIDATE_EMAIL);
-        if (!$to) continue; // Skip invalid emails
 
         $unsubscribeUrl = "https://" . $_SERVER['HTTP_HOST'] . "/comments/unsubscribe.php?token=" . $subscriber['token'];
 
@@ -258,10 +316,8 @@ function sendNotificationEmail($commentId, $pageUrl, $parentId, $authorName, $co
         $message .= "---\n";
         $message .= "To unsubscribe from notifications for this page: {$unsubscribeUrl}\n";
 
-        $headers = "From: noreply@" . $_SERVER['HTTP_HOST'] . "\r\n";
-        $headers .= "Reply-To: noreply@" . $_SERVER['HTTP_HOST'] . "\r\n";
-
-        @mail($to, $subject, $message, $headers);
+        // Queue email instead of sending immediately
+        queueEmail($commentId, $subscriber['email'], '', 'subscriber', $subject, $message);
     }
 
     // Notify admin of new comment
@@ -270,16 +326,13 @@ function sendNotificationEmail($commentId, $pageUrl, $parentId, $authorName, $co
     $result = $stmt->fetch();
 
     if ($result && !empty($result['value'])) {
-        $to = filter_var($result['value'], FILTER_VALIDATE_EMAIL);
-        if (!$to) return; // Invalid email, skip
-
         $subject = "New comment on your site";
         $message = "New comment from {$safeAuthorName} on {$safePageUrl}:\n\n";
         $message .= "{$safeContent}\n\n";
         $message .= "Manage comments: https://" . $_SERVER['HTTP_HOST'] . "/comments/admin.html\n";
 
-        $headers = "From: noreply@" . $_SERVER['HTTP_HOST'] . "\r\n";
-        @mail($to, $subject, $message, $headers);
+        // Queue admin email instead of sending immediately
+        queueEmail($commentId, $result['value'], 'Admin', 'admin', $subject, $message);
     }
 }
 
@@ -290,8 +343,21 @@ if ($method === 'GET' && $action === 'comments') {
         jsonResponse(['error' => 'URL is required'], 400);
     }
 
+    // Add pagination support to prevent memory overflow with large comment counts
+    $limit = isset($_GET['limit']) ? min(max(1, (int)$_GET['limit']), 1000) : 500;
+    $offset = isset($_GET['offset']) ? max(0, (int)$_GET['offset']) : 0;
+
     $status = isAdmin() ? ['pending', 'approved'] : ['approved'];
     $placeholders = implode(',', array_fill(0, count($status), '?'));
+
+    // Get total count for pagination metadata
+    $countStmt = $db->prepare("
+        SELECT COUNT(*) as total FROM comments
+        WHERE page_url = ? AND status IN ($placeholders)
+    ");
+    $countStmt->execute(array_merge([$pageUrl], $status));
+    $countResult = $countStmt->fetch();
+    $total = $countResult['total'];
 
     $stmt = $db->prepare("
         SELECT id, page_url, parent_id, author_name, author_email, author_url,
@@ -299,8 +365,9 @@ if ($method === 'GET' && $action === 'comments') {
         FROM comments
         WHERE page_url = ? AND status IN ($placeholders)
         ORDER BY created_at ASC
+        LIMIT ? OFFSET ?
     ");
-    $stmt->execute(array_merge([$pageUrl], $status));
+    $stmt->execute(array_merge([$pageUrl], $status, [$limit, $offset]));
     $comments = $stmt->fetchAll();
 
     // Build threaded structure
@@ -324,7 +391,15 @@ if ($method === 'GET' && $action === 'comments') {
         }
     }
 
-    jsonResponse(['comments' => $threaded]);
+    jsonResponse([
+        'comments' => $threaded,
+        'pagination' => [
+            'total' => $total,
+            'limit' => $limit,
+            'offset' => $offset,
+            'hasMore' => ($offset + $limit) < $total
+        ]
+    ]);
 }
 
 // GET /api.php?action=recent&limit=10
@@ -489,6 +564,14 @@ if ($method === 'GET' && $action === 'csrf_token') {
 
 // POST /api.php?action=login (admin)
 if ($method === 'POST' && $action === 'login') {
+    $ipAddress = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
+
+    // Check login rate limiting
+    $rateLimit = checkLoginRateLimit($ipAddress);
+    if ($rateLimit['limited']) {
+        jsonResponse(['error' => $rateLimit['reason']], 429);
+    }
+
     $input = getInput();
     $password = $input['password'] ?? '';
 
@@ -497,9 +580,20 @@ if ($method === 'POST' && $action === 'login') {
     $result = $stmt->fetch();
 
     if ($result && password_verify($password, $result['value'])) {
-        $token = bin2hex(random_bytes(32));
+        // Record successful login attempt
+        recordLoginAttempt($ipAddress, true);
 
-        // Store token
+        $token = bin2hex(random_bytes(32));
+        $userAgent = $_SERVER['HTTP_USER_AGENT'] ?? '';
+
+        // Create new session in sessions table
+        $stmt = $db->prepare("
+            INSERT INTO sessions (token, expires_at, ip_address, user_agent)
+            VALUES (?, datetime('now', '+30 days'), ?, ?)
+        ");
+        $stmt->execute([$token, $ipAddress, $userAgent]);
+
+        // Also store in old settings table for backward compatibility
         $stmt = $db->prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('admin_token', ?)");
         $stmt->execute([$token]);
 
@@ -512,6 +606,9 @@ if ($method === 'POST' && $action === 'login') {
 
         jsonResponse(['success' => true, 'message' => 'Logged in successfully', 'csrf_token' => $csrfToken]);
     } else {
+        // Record failed login attempt
+        recordLoginAttempt($ipAddress, false);
+
         jsonResponse(['error' => 'Invalid password'], 401);
     }
 }
@@ -568,16 +665,35 @@ if ($method === 'GET' && $action === 'pending') {
         jsonResponse(['error' => 'Unauthorized'], 401);
     }
 
-    $stmt = $db->query("
+    // Add pagination to prevent browser crashes with large datasets
+    $limit = isset($_GET['limit']) ? min(max(1, (int)$_GET['limit']), 10000) : 50;
+    $offset = isset($_GET['offset']) ? max(0, (int)$_GET['offset']) : 0;
+
+    // Get total count
+    $countStmt = $db->query("SELECT COUNT(*) as total FROM comments WHERE status = 'pending'");
+    $countResult = $countStmt->fetch();
+    $total = $countResult['total'];
+
+    $stmt = $db->prepare("
         SELECT id, page_url, parent_id, author_name, author_email, author_url,
                content, created_at, status, ip_address
         FROM comments
         WHERE status = 'pending'
         ORDER BY created_at DESC
+        LIMIT ? OFFSET ?
     ");
+    $stmt->execute([$limit, $offset]);
     $comments = $stmt->fetchAll();
 
-    jsonResponse(['comments' => $comments]);
+    jsonResponse([
+        'comments' => $comments,
+        'pagination' => [
+            'total' => $total,
+            'limit' => $limit,
+            'offset' => $offset,
+            'hasMore' => ($offset + $limit) < $total
+        ]
+    ]);
 }
 
 // GET /api.php?action=all (admin)
@@ -586,15 +702,34 @@ if ($method === 'GET' && $action === 'all') {
         jsonResponse(['error' => 'Unauthorized'], 401);
     }
 
-    $stmt = $db->query("
+    // Add pagination to prevent browser crashes with large datasets
+    $limit = isset($_GET['limit']) ? min(max(1, (int)$_GET['limit']), 10000) : 50;
+    $offset = isset($_GET['offset']) ? max(0, (int)$_GET['offset']) : 0;
+
+    // Get total count
+    $countStmt = $db->query("SELECT COUNT(*) as total FROM comments");
+    $countResult = $countStmt->fetch();
+    $total = $countResult['total'];
+
+    $stmt = $db->prepare("
         SELECT id, page_url, parent_id, author_name, author_email, author_url,
                content, created_at, status, ip_address
         FROM comments
         ORDER BY created_at DESC
+        LIMIT ? OFFSET ?
     ");
+    $stmt->execute([$limit, $offset]);
     $comments = $stmt->fetchAll();
 
-    jsonResponse(['comments' => $comments]);
+    jsonResponse([
+        'comments' => $comments,
+        'pagination' => [
+            'total' => $total,
+            'limit' => $limit,
+            'offset' => $offset,
+            'hasMore' => ($offset + $limit) < $total
+        ]
+    ]);
 }
 
 // GET /api.php?action=subscriptions (admin)
@@ -603,14 +738,33 @@ if ($method === 'GET' && $action === 'subscriptions') {
         jsonResponse(['error' => 'Unauthorized'], 401);
     }
 
-    $stmt = $db->query("
+    // Add pagination to prevent browser crashes with large datasets
+    $limit = isset($_GET['limit']) ? min(max(1, (int)$_GET['limit']), 10000) : 50;
+    $offset = isset($_GET['offset']) ? max(0, (int)$_GET['offset']) : 0;
+
+    // Get total count
+    $countStmt = $db->query("SELECT COUNT(*) as total FROM subscriptions");
+    $countResult = $countStmt->fetch();
+    $total = $countResult['total'];
+
+    $stmt = $db->prepare("
         SELECT id, page_url, email, token, subscribed_at, active
         FROM subscriptions
         ORDER BY subscribed_at DESC
+        LIMIT ? OFFSET ?
     ");
+    $stmt->execute([$limit, $offset]);
     $subscriptions = $stmt->fetchAll();
 
-    jsonResponse(['subscriptions' => $subscriptions]);
+    jsonResponse([
+        'subscriptions' => $subscriptions,
+        'pagination' => [
+            'total' => $total,
+            'limit' => $limit,
+            'offset' => $offset,
+            'hasMore' => ($offset + $limit) < $total
+        ]
+    ]);
 }
 
 // POST /api.php?action=toggle_subscription (admin)

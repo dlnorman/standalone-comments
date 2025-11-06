@@ -390,7 +390,7 @@
         // Check if already logged in on page load
         async function checkAuth() {
             try {
-                const response = await fetch(`${API_URL}?action=pending`, {
+                const response = await fetch(`${API_URL}?action=pending&limit=10000`, {
                     credentials: 'include'
                 });
 
@@ -449,7 +449,7 @@
             try {
                 // Add timestamp to prevent caching
                 const timestamp = new Date().getTime();
-                const response = await fetch(`${API_URL}?action=pending&_=${timestamp}`, {
+                const response = await fetch(`${API_URL}?action=pending&limit=10000&_=${timestamp}`, {
                     credentials: 'include',
                     cache: 'no-store'
                 });

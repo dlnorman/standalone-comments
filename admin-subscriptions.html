@@ -405,7 +405,7 @@
         // Check if already logged in on page load
         async function checkAuth() {
             try {
-                const response = await fetch(`${API_URL}?action=subscriptions`, {
+                const response = await fetch(`${API_URL}?action=subscriptions&limit=10000`, {
                     credentials: 'include'
                 });
 
@@ -457,7 +457,7 @@
             const container = document.getElementById('subscriptions-list');
             try {
                 const timestamp = new Date().getTime();
-                const response = await fetch(`${API_URL}?action=subscriptions&_=${timestamp}`, {
+                const response = await fetch(`${API_URL}?action=subscriptions&limit=10000&_=${timestamp}`, {
                     credentials: 'include',
                     cache: 'no-store'
                 });

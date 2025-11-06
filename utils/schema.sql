@@ -22,6 +22,16 @@ CREATE INDEX IF NOT EXISTS idx_parent_id ON comments(parent_id);
 CREATE INDEX IF NOT EXISTS idx_status ON comments(status);
 CREATE INDEX IF NOT EXISTS idx_created_at ON comments(created_at);
 
+-- Performance indexes for rate limiting (critical for high traffic)
+CREATE INDEX IF NOT EXISTS idx_ip_address ON comments(ip_address);
+CREATE INDEX IF NOT EXISTS idx_author_email ON comments(author_email);
+CREATE INDEX IF NOT EXISTS idx_rate_limit_ip ON comments(ip_address, created_at);
+CREATE INDEX IF NOT EXISTS idx_rate_limit_email ON comments(author_email, created_at);
+
+-- Composite indexes for faster filtered queries
+CREATE INDEX IF NOT EXISTS idx_page_url_status ON comments(page_url, status);
+CREATE INDEX IF NOT EXISTS idx_author_email_status ON comments(author_email, status);
+
 -- Settings table for admin configuration
 CREATE TABLE IF NOT EXISTS settings (
     key TEXT PRIMARY KEY,
@@ -51,3 +61,47 @@ CREATE TABLE IF NOT EXISTS subscriptions (
 CREATE INDEX IF NOT EXISTS idx_sub_page_url ON subscriptions(page_url);
 CREATE INDEX IF NOT EXISTS idx_sub_email ON subscriptions(email);
 CREATE INDEX IF NOT EXISTS idx_sub_token ON subscriptions(token);
+
+-- Email queue for asynchronous email delivery
+CREATE TABLE IF NOT EXISTS email_queue (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    comment_id INTEGER,
+    recipient_email TEXT NOT NULL,
+    recipient_name TEXT,
+    email_type TEXT NOT NULL, -- 'parent_reply', 'subscriber', 'admin'
+    subject TEXT NOT NULL,
+    body TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    sent_at DATETIME,
+    status TEXT DEFAULT 'pending' CHECK(status IN ('pending', 'sent', 'failed')),
+    attempts INTEGER DEFAULT 0,
+    last_error TEXT,
+    FOREIGN KEY (comment_id) REFERENCES comments(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_email_queue_status ON email_queue(status, created_at);
+CREATE INDEX IF NOT EXISTS idx_email_queue_comment ON email_queue(comment_id);
+
+-- Login attempts tracking for brute force protection
+CREATE TABLE IF NOT EXISTS login_attempts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ip_address TEXT NOT NULL,
+    attempted_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    success INTEGER DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS idx_login_attempts_ip ON login_attempts(ip_address, attempted_at);
+
+-- Admin sessions table for proper authentication
+CREATE TABLE IF NOT EXISTS sessions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    token TEXT UNIQUE NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    expires_at DATETIME NOT NULL,
+    last_activity DATETIME DEFAULT CURRENT_TIMESTAMP,
+    ip_address TEXT,
+    user_agent TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_session_token ON sessions(token);
+CREATE INDEX IF NOT EXISTS idx_session_expires ON sessions(expires_at);

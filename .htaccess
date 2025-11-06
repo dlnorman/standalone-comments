@@ -77,6 +77,24 @@ Options -Indexes
     Header set X-XSS-Protection "1; mode=block"
 </IfModule>
 
+# Cache static assets for performance
+<IfModule mod_headers.c>
+    # Cache JavaScript and CSS for 1 week (they rarely change)
+    <FilesMatch "\.(js|css)$">
+        Header set Cache-Control "public, max-age=604800, immutable"
+    </FilesMatch>
+
+    # Cache HTML files for 1 hour (may update more frequently)
+    <FilesMatch "\.(html)$">
+        Header set Cache-Control "public, max-age=3600"
+    </FilesMatch>
+
+    # Never cache PHP files (API responses already set no-cache in api.php)
+    <FilesMatch "\.php$">
+        Header set Cache-Control "no-store, no-cache, must-revalidate, max-age=0"
+    </FilesMatch>
+</IfModule>
+
 # PHP settings
 <IfModule mod_php.c>
     php_value upload_max_filesize 2M
