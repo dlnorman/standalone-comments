@@ -41,10 +41,31 @@ if [ $? -eq 0 ]; then
     sqlite3 "$BACKUP_FILE" "SELECT 'Comments: ' || COUNT(*) FROM comments;"
     sqlite3 "$BACKUP_FILE" "SELECT 'Subscriptions: ' || COUNT(*) FROM subscriptions;"
 
+    # Clean up old backups (keep only last 30)
+    echo ""
+    echo "Cleaning up old backups..."
+    BACKUP_COUNT=$(ls -1 "$BACKUP_DIR"/comments-*.db 2>/dev/null | wc -l)
+    KEEP_COUNT=30
+
+    if [ "$BACKUP_COUNT" -gt "$KEEP_COUNT" ]; then
+        DELETE_COUNT=$((BACKUP_COUNT - KEEP_COUNT))
+        echo "Found $BACKUP_COUNT backups, keeping $KEEP_COUNT most recent, deleting $DELETE_COUNT old backups..."
+
+        # Delete oldest backups beyond the keep count
+        ls -1t "$BACKUP_DIR"/comments-*.db | tail -n +$((KEEP_COUNT + 1)) | while read -r old_backup; do
+            echo "  Deleting: $(basename "$old_backup")"
+            rm "$old_backup"
+        done
+
+        echo "✓ Cleanup complete"
+    else
+        echo "No cleanup needed ($BACKUP_COUNT backups, keeping up to $KEEP_COUNT)"
+    fi
+
     # List recent backups
     echo ""
     echo "Recent backups:"
-    ls -lht "$BACKUP_DIR"/*.db | head -5
+    ls -lht "$BACKUP_DIR"/*.db 2>/dev/null | head -5
 else
     echo "✗ Backup failed!"
     exit 1
