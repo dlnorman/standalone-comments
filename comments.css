@@ -3,149 +3,320 @@
  */
 
 .comments-system {
+    /* CSS Variables for easy theming and adaptation */
+    --cs-font-family: inherit;
+    --cs-text-color: inherit;
+    --cs-heading-color: inherit;
+    --cs-link-color: #4a90e2;
+
+    --cs-form-bg: rgba(0, 0, 0, 0.03);
+    --cs-form-padding: 1.5rem;
+    --cs-form-radius: 8px;
+    --cs-form-border: 1px solid rgba(0, 0, 0, 0.05);
+
+    --cs-input-bg: #ffffff;
+    --cs-input-border: #dddddd;
+    --cs-input-text: #333333;
+    --cs-input-focus-border: #4a90e2;
+    --cs-input-focus-shadow: rgba(74, 144, 226, 0.1);
+
+    /* Button Colors - High Contrast Defaults */
+    --cs-btn-submit-bg: #2563eb;
+    --cs-btn-submit-text: #ffffff;
+    --cs-btn-submit-hover: #1d4ed8;
+    --cs-btn-submit-border: #2563eb;
+
+    --cs-btn-cancel-bg: #f3f4f6;
+    --cs-btn-cancel-text: #374151;
+    --cs-btn-cancel-hover: #e5e7eb;
+    --cs-btn-cancel-border: #d1d5db;
+
+    --cs-btn-reply-color: #4a90e2;
+    --cs-btn-reply-border: #dddddd;
+    --cs-btn-reply-hover-bg: rgba(0, 0, 0, 0.05);
+
+    --cs-message-success-bg: #d4edda;
+    --cs-message-success-text: #155724;
+    --cs-message-error-bg: #f8d7da;
+    --cs-message-error-text: #721c24;
+    --cs-message-info-bg: #d1ecf1;
+    --cs-message-info-text: #0c5460;
+
+    --cs-comment-bg: #ffffff;
+    --cs-comment-border: #e0e0e0;
+    --cs-comment-shadow-hover: rgba(0, 0, 0, 0.05);
+    --cs-comment-meta-color: #888888;
+
+    --cs-pending-bg: #fffbf0;
+    --cs-pending-badge-bg: #ffc107;
+    --cs-pending-badge-text: #333333;
+
     max-width: 800px;
     margin: 2rem auto;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-    color: #333;
+    font-family: var(--cs-font-family);
+    color: var(--cs-text-color);
     line-height: 1.6;
+}
+
+/* Dark Mode Support (Media Query + Class fallback) */
+@media (prefers-color-scheme: dark) {
+    .comments-system {
+        --cs-link-color: #60a5fa;
+
+        --cs-form-bg: rgba(255, 255, 255, 0.05);
+        --cs-form-border: 1px solid rgba(255, 255, 255, 0.1);
+
+        --cs-input-bg: #1f2937;
+        --cs-input-border: #374151;
+        --cs-input-text: #f3f4f6;
+        --cs-input-focus-border: #60a5fa;
+        --cs-input-focus-shadow: rgba(96, 165, 250, 0.2);
+
+        --cs-btn-submit-bg: #3b82f6;
+        --cs-btn-submit-text: #ffffff;
+        --cs-btn-submit-hover: #2563eb;
+        --cs-btn-submit-border: #3b82f6;
+
+        --cs-btn-cancel-bg: #374151;
+        --cs-btn-cancel-text: #f3f4f6;
+        --cs-btn-cancel-hover: #4b5563;
+        --cs-btn-cancel-border: #4b5563;
+
+        --cs-btn-reply-color: #60a5fa;
+        --cs-btn-reply-border: #374151;
+        --cs-btn-reply-hover-bg: rgba(255, 255, 255, 0.05);
+
+        --cs-message-success-bg: rgba(21, 87, 36, 0.4);
+        --cs-message-success-text: #e2e3e5;
+        --cs-message-error-bg: rgba(114, 28, 36, 0.4);
+        --cs-message-error-text: #e2e3e5;
+        --cs-message-info-bg: rgba(12, 84, 96, 0.4);
+        --cs-message-info-text: #e2e3e5;
+
+        --cs-comment-bg: #1f2937;
+        --cs-comment-border: #374151;
+        --cs-comment-shadow-hover: rgba(0, 0, 0, 0.2);
+        --cs-comment-meta-color: #9ca3af;
+
+        --cs-pending-bg: rgba(255, 193, 7, 0.15);
+        --cs-pending-badge-bg: #ffc107;
+        --cs-pending-badge-text: #000000;
+    }
+}
+
+/* Manual Dark Mode Class Support */
+.dark-mode .comments-system,
+[data-theme="dark"] .comments-system {
+    --cs-link-color: #60a5fa;
+    --cs-form-bg: rgba(255, 255, 255, 0.05);
+    --cs-form-border: 1px solid rgba(255, 255, 255, 0.1);
+    --cs-input-bg: #1f2937;
+    --cs-input-border: #374151;
+    --cs-input-text: #f3f4f6;
+    --cs-input-focus-border: #60a5fa;
+    --cs-input-focus-shadow: rgba(96, 165, 250, 0.2);
+    --cs-btn-submit-bg: #3b82f6;
+    --cs-btn-submit-text: #ffffff;
+    --cs-btn-submit-hover: #2563eb;
+    --cs-btn-submit-border: #3b82f6;
+    --cs-btn-cancel-bg: #374151;
+    --cs-btn-cancel-text: #f3f4f6;
+    --cs-btn-cancel-hover: #4b5563;
+    --cs-btn-cancel-border: #4b5563;
+    --cs-btn-reply-color: #60a5fa;
+    --cs-btn-reply-border: #374151;
+    --cs-btn-reply-hover-bg: rgba(255, 255, 255, 0.05);
+    --cs-message-success-bg: rgba(21, 87, 36, 0.4);
+    --cs-message-success-text: #e2e3e5;
+    --cs-message-error-bg: rgba(114, 28, 36, 0.4);
+    --cs-message-error-text: #e2e3e5;
+    --cs-message-info-bg: rgba(12, 84, 96, 0.4);
+    --cs-message-info-text: #e2e3e5;
+    --cs-comment-bg: #1f2937;
+    --cs-comment-border: #374151;
+    --cs-comment-shadow-hover: rgba(0, 0, 0, 0.2);
+    --cs-comment-meta-color: #9ca3af;
+    --cs-pending-bg: rgba(255, 193, 7, 0.15);
+    --cs-pending-badge-bg: #ffc107;
+    --cs-pending-badge-text: #000000;
 }
 
 .comments-title {
     font-size: 1.75rem;
     margin-bottom: 1.5rem;
-    border-bottom: 2px solid #e0e0e0;
+    border-bottom: 2px solid var(--cs-comment-border);
     padding-bottom: 0.5rem;
+    color: var(--cs-heading-color);
 }
 
 /* Comment Form */
-.comment-form {
-    background: #f9f9f9;
-    padding: 1.5rem;
-    border-radius: 8px;
+.comments-system .comment-form {
+    background: var(--cs-form-bg);
+    padding: var(--cs-form-padding);
+    border-radius: var(--cs-form-radius);
+    border: var(--cs-form-border);
     margin-bottom: 2rem;
 }
 
-.comment-form h4 {
+.comments-system .comment-form h4 {
     margin-top: 0;
     margin-bottom: 1rem;
-    color: #555;
+    color: var(--cs-heading-color);
+    opacity: 0.9;
 }
 
-.form-group {
+.comments-system .form-group {
     margin-bottom: 1rem;
+    background: transparent !important;
+    padding: 0 !important;
+    border: none !important;
 }
 
-.form-input,
-.form-textarea {
+.comments-system .form-input,
+.comments-system .form-textarea {
     width: 100%;
     padding: 0.75rem;
-    border: 1px solid #ddd;
+    border: 1px solid var(--cs-input-border);
     border-radius: 4px;
     font-size: 1rem;
     font-family: inherit;
     box-sizing: border-box;
+    background-color: var(--cs-input-bg);
+    color: var(--cs-input-text);
+    transition: border-color 0.2s, box-shadow 0.2s;
+    appearance: none;
 }
 
-.form-input:focus,
-.form-textarea:focus {
+.comments-system .form-input:focus,
+.comments-system .form-textarea:focus {
     outline: none;
-    border-color: #4a90e2;
-    box-shadow: 0 0 0 3px rgba(74, 144, 226, 0.1);
+    border-color: var(--cs-input-focus-border);
+    box-shadow: 0 0 0 3px var(--cs-input-focus-shadow);
 }
 
-.form-textarea {
+.comments-system .form-textarea {
     resize: vertical;
     min-height: 100px;
 }
 
-.checkbox-label {
+.comments-system .checkbox-label {
     display: flex;
     align-items: center;
     gap: 0.5rem;
     cursor: pointer;
     font-size: 0.9rem;
-    color: #555;
+    color: var(--cs-text-color);
+    opacity: 0.9;
+    background: transparent !important;
 }
 
-.checkbox-label input[type="checkbox"] {
+.comments-system .checkbox-label input[type="checkbox"] {
     width: auto;
     cursor: pointer;
+    accent-color: var(--cs-btn-submit-bg);
+    margin: 0;
 }
 
-.form-actions {
+.comments-system .form-actions {
     display: flex;
     gap: 0.75rem;
+    background: transparent !important;
 }
 
-.btn-submit,
-.btn-cancel,
-.btn-reply {
+/* Buttons - MAX Specificity & !important */
+#comments-container .comments-system button.btn-submit,
+#comments-container .comments-system button.btn-cancel,
+#comments-container .comments-system button.btn-reply {
+    display: inline-block;
     padding: 0.6rem 1.25rem;
-    border: none;
     border-radius: 4px;
     font-size: 0.95rem;
+    font-weight: 500;
     cursor: pointer;
-    transition: background-color 0.2s;
+    transition: all 0.2s ease;
+    font-family: inherit;
+    text-align: center;
+    text-decoration: none;
+    line-height: 1.5;
+    appearance: none;
+    -webkit-appearance: none;
+    box-shadow: none;
+    text-shadow: none !important;
+    background-image: none !important;
+    /* Kill gradients */
+    filter: none !important;
 }
 
-.btn-submit {
-    background-color: #4a90e2;
-    color: white;
+/* Submit Button - The Fix */
+#comments-container .comments-system button.btn-submit {
+    background: var(--cs-btn-submit-bg) !important;
+    background-color: var(--cs-btn-submit-bg) !important;
+    color: var(--cs-btn-submit-text) !important;
+    border: 1px solid var(--cs-btn-submit-border) !important;
+    opacity: 1 !important;
 }
 
-.btn-submit:hover {
-    background-color: #357abd;
+#comments-container .comments-system button.btn-submit:hover {
+    background: var(--cs-btn-submit-hover) !important;
+    background-color: var(--cs-btn-submit-hover) !important;
+    border-color: var(--cs-btn-submit-hover) !important;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1) !important;
 }
 
-.btn-submit:disabled {
-    background-color: #ccc;
+#comments-container .comments-system button.btn-submit:disabled {
+    opacity: 0.6 !important;
     cursor: not-allowed;
+    transform: none;
+    box-shadow: none !important;
 }
 
-.btn-cancel {
-    background-color: #e0e0e0;
-    color: #333;
+#comments-container .comments-system button.btn-cancel {
+    background: var(--cs-btn-cancel-bg) !important;
+    background-color: var(--cs-btn-cancel-bg) !important;
+    color: var(--cs-btn-cancel-text) !important;
+    border: 1px solid var(--cs-btn-cancel-border) !important;
 }
 
-.btn-cancel:hover {
-    background-color: #d0d0d0;
+#comments-container .comments-system button.btn-cancel:hover {
+    background-color: var(--cs-btn-cancel-hover) !important;
 }
 
-.btn-reply {
-    background: none;
-    border: 1px solid #ddd;
-    color: #4a90e2;
+#comments-container .comments-system button.btn-reply {
+    background: transparent !important;
+    border: 1px solid var(--cs-btn-reply-border) !important;
+    color: var(--cs-btn-reply-color) !important;
     padding: 0.4rem 0.8rem;
     font-size: 0.85rem;
 }
 
-.btn-reply:hover {
-    background-color: #f0f0f0;
+#comments-container .comments-system button.btn-reply:hover {
+    background-color: var(--cs-btn-reply-hover-bg) !important;
 }
 
 /* Form Messages */
-.form-message {
+.comments-system .form-message {
     margin-top: 1rem;
     padding: 0.75rem;
     border-radius: 4px;
 }
 
-.form-message.success {
-    background-color: #d4edda;
-    color: #155724;
-    border: 1px solid #c3e6cb;
+.comments-system .form-message.success {
+    background-color: var(--cs-message-success-bg);
+    color: var(--cs-message-success-text);
+    border: 1px solid rgba(0, 0, 0, 0.1);
 }
 
-.form-message.error {
-    background-color: #f8d7da;
-    color: #721c24;
-    border: 1px solid #f5c6cb;
+.comments-system .form-message.error {
+    background-color: var(--cs-message-error-bg);
+    color: var(--cs-message-error-text);
+    border: 1px solid rgba(0, 0, 0, 0.1);
 }
 
-.form-message.info {
-    background-color: #d1ecf1;
-    color: #0c5460;
-    border: 1px solid #bee5eb;
+.comments-system .form-message.info {
+    background-color: var(--cs-message-info-bg);
+    color: var(--cs-message-info-text);
+    border: 1px solid rgba(0, 0, 0, 0.1);
 }
 
 /* Comments List */
@@ -153,110 +324,112 @@
     margin-top: 2rem;
 }
 
-.comment {
-    background: white;
-    border: 1px solid #e0e0e0;
+.comments-system .comment {
+    background: var(--cs-comment-bg);
+    border: 1px solid var(--cs-comment-border);
     border-radius: 6px;
     padding: 1.25rem;
     margin-bottom: 1rem;
     transition: box-shadow 0.2s;
 }
 
-.comment:hover {
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+.comments-system .comment:hover {
+    box-shadow: 0 2px 8px var(--cs-comment-shadow-hover);
 }
 
-.comment-pending {
-    opacity: 0.7;
-    background-color: #fffbf0;
+.comments-system .comment-pending {
+    opacity: 0.9;
+    background-color: var(--cs-pending-bg);
 }
 
-.comment-meta {
+.comments-system .comment-meta {
     display: flex;
     align-items: center;
     gap: 1rem;
     margin-bottom: 0.75rem;
     font-size: 0.9rem;
+    flex-wrap: wrap;
 }
 
-.comment-author {
+.comments-system .comment-author {
     font-weight: 600;
-    color: #333;
+    color: var(--cs-heading-color);
 }
 
-.comment-author a {
-    color: #4a90e2;
+.comments-system .comment-author a {
+    color: var(--cs-link-color);
     text-decoration: none;
 }
 
-.comment-author a:hover {
+.comments-system .comment-author a:hover {
     text-decoration: underline;
 }
 
-.comment-date {
-    color: #888;
+.comments-system .comment-date {
+    color: var(--cs-comment-meta-color);
 }
 
-.badge-pending {
-    background-color: #ffc107;
-    color: #333;
+.comments-system .badge-pending {
+    background-color: var(--cs-pending-badge-bg);
+    color: var(--cs-pending-badge-text);
     padding: 0.2rem 0.5rem;
     border-radius: 3px;
     font-size: 0.75rem;
     font-weight: 600;
 }
 
-.comment-content {
+.comments-system .comment-content {
     margin-bottom: 0.75rem;
-    color: #444;
+    color: var(--cs-text-color);
+    line-height: 1.6;
 }
 
-.comment-actions {
+.comments-system .comment-actions {
     display: flex;
     gap: 0.5rem;
 }
 
-.comment-reply-form {
+.comments-system .comment-reply-form {
     margin-top: 1rem;
     margin-bottom: 1rem;
 }
 
 /* Messages */
-.loading,
-.no-comments,
-.error {
+.comments-system .loading,
+.comments-system .no-comments,
+.comments-system .error {
     text-align: center;
     padding: 2rem;
-    color: #888;
+    color: var(--cs-comment-meta-color);
     font-style: italic;
 }
 
-.error {
-    color: #d32f2f;
+.comments-system .error {
+    color: var(--cs-message-error-text);
 }
 
 /* Responsive Design */
 @media (max-width: 768px) {
     .comments-system {
-        margin: 1rem;
+        margin: 1rem 0;
     }
 
-    .comment {
+    .comments-system .comment {
         margin-left: 0 !important;
         padding-left: 1rem;
-        border-left: 3px solid #e0e0e0;
+        border-left: 3px solid var(--cs-comment-border);
     }
 
-    .comment-form {
+    .comments-system .comment-form {
         padding: 1rem;
     }
 
-    .form-actions {
+    .comments-system .form-actions {
         flex-direction: column;
     }
 
-    .btn-submit,
-    .btn-cancel {
+    .comments-system .btn-submit,
+    .comments-system .btn-cancel {
         width: 100%;
     }
 }
