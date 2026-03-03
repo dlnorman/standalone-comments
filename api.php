@@ -430,11 +430,12 @@ if ($method === 'GET' && $action === 'comments') {
     $total = $countResult['total'];
 
     $stmt = $db->prepare("
-        SELECT id, page_url, parent_id, author_name, author_email, author_url,
-               content, created_at, status
-        FROM comments
-        WHERE page_url = ? AND status IN ($placeholders)
-        ORDER BY created_at ASC
+        SELECT c.id, c.page_url, c.parent_id, c.author_name, c.author_email, c.author_url,
+               c.content, c.created_at, c.status,
+               COALESCE((SELECT COUNT(*) FROM votes WHERE comment_id = c.id), 0) AS vote_count
+        FROM comments c
+        WHERE c.page_url = ? AND c.status IN ($placeholders)
+        ORDER BY c.created_at ASC
         LIMIT ? OFFSET ?
     ");
     $stmt->execute(array_merge([$pageUrl], $status, [$limit, $offset]));
@@ -498,6 +499,48 @@ if ($method === 'GET' && $action === 'recent') {
     }
 
     jsonResponse(['comments' => $comments]);
+}
+
+// POST /api.php?action=vote
+// Toggle an upvote on a comment (one per IP address)
+if ($method === 'POST' && $action === 'vote') {
+    $input = getInput();
+    $commentId = isset($input['comment_id']) ? (int)$input['comment_id'] : 0;
+
+    if ($commentId <= 0) {
+        jsonResponse(['error' => 'Invalid comment ID'], 400);
+    }
+
+    // Verify the comment exists and is approved
+    $checkStmt = $db->prepare("SELECT id FROM comments WHERE id = ? AND status = 'approved'");
+    $checkStmt->execute([$commentId]);
+    if (!$checkStmt->fetch()) {
+        jsonResponse(['error' => 'Comment not found'], 404);
+    }
+
+    $ip = $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0';
+
+    // Check if this IP has already voted on this comment
+    $existsStmt = $db->prepare("SELECT id FROM votes WHERE comment_id = ? AND ip_address = ?");
+    $existsStmt->execute([$commentId, $ip]);
+    $existing = $existsStmt->fetch();
+
+    if ($existing) {
+        // Already voted — remove the vote (toggle off)
+        $db->prepare("DELETE FROM votes WHERE comment_id = ? AND ip_address = ?")->execute([$commentId, $ip]);
+        $voted = false;
+    } else {
+        // New vote — insert it
+        $db->prepare("INSERT INTO votes (comment_id, ip_address) VALUES (?, ?)")->execute([$commentId, $ip]);
+        $voted = true;
+    }
+
+    // Return updated count
+    $countStmt = $db->prepare("SELECT COUNT(*) as count FROM votes WHERE comment_id = ?");
+    $countStmt->execute([$commentId]);
+    $count = (int)$countStmt->fetch()['count'];
+
+    jsonResponse(['voted' => $voted, 'count' => $count]);
 }
 
 // POST /api.php?action=post
