@@ -18,6 +18,58 @@ class CommentSystem {
         this.init();
     }
 
+    getVotedComments() {
+        try {
+            return JSON.parse(localStorage.getItem('comment_votes') || '[]');
+        } catch (e) {
+            return [];
+        }
+    }
+
+    setVotedComments(ids) {
+        try {
+            localStorage.setItem('comment_votes', JSON.stringify(ids));
+        } catch (e) {}
+    }
+
+    hasVoted(commentId) {
+        return this.getVotedComments().includes(commentId);
+    }
+
+    async handleVote(commentId) {
+        const btn = document.querySelector(`.btn-upvote[data-comment-id="${commentId}"]`);
+        if (!btn || btn.disabled) return;
+
+        btn.disabled = true;
+        try {
+            const response = await fetch(`${this.apiUrl}?action=vote`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ comment_id: commentId })
+            });
+            const result = await response.json();
+            if (response.ok) {
+                // Update localStorage
+                let voted = this.getVotedComments();
+                if (result.voted) {
+                    if (!voted.includes(commentId)) voted.push(commentId);
+                } else {
+                    voted = voted.filter(id => id !== commentId);
+                }
+                this.setVotedComments(voted);
+
+                // Update button
+                btn.classList.toggle('voted', result.voted);
+                const countEl = btn.querySelector('.upvote-count');
+                if (countEl) countEl.textContent = result.count > 0 ? result.count : '';
+            }
+        } catch (e) {
+            // Silently fail — voting is non-critical
+        } finally {
+            btn.disabled = false;
+        }
+    }
+
     async init() {
         this.render();
         await this.loadComments();
@@ -207,6 +259,16 @@ class CommentSystem {
         const isPending = comment.status === 'pending';
         const pendingBadge = isPending ? '<span class="badge-pending">Pending Moderation</span>' : '';
 
+        const voteCount = comment.vote_count || 0;
+        const voted = this.hasVoted(comment.id);
+        const countDisplay = voteCount > 0 ? voteCount : '';
+        const upvoteBtn = isPending ? '' : `
+            <button class="btn-upvote${voted ? ' voted' : ''}" data-comment-id="${comment.id}"
+                    onclick="commentsWidget.handleVote(${comment.id})"
+                    title="${voted ? 'Remove your appreciation' : 'Appreciate this comment'}">
+                <span class="upvote-icon">&#9829;</span><span class="upvote-count">${countDisplay}</span>
+            </button>`;
+
         let html = `
             <div class="comment ${isPending ? 'comment-pending' : ''}" id="comment-${comment.id}" style="margin-left: ${depth * 40}px">
                 <div class="comment-meta">
@@ -218,6 +280,7 @@ class CommentSystem {
                     ${this.escapeHtml(comment.content).replace(/\n/g, '<br>')}
                 </div>
                 <div class="comment-actions">
+                    ${upvoteBtn}
                     <button class="btn-reply" onclick="commentsWidget.showReplyForm(${comment.id}, '${this.escapeHtml(comment.author_name).replace(/'/g, "\\'")}')">Reply</button>
                 </div>
                 <div id="reply-form-container-${comment.id}"></div>

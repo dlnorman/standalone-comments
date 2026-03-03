@@ -35,6 +35,11 @@
     --cs-btn-reply-border: #dddddd;
     --cs-btn-reply-hover-bg: rgba(0, 0, 0, 0.05);
 
+    --cs-btn-upvote-color: #888888;
+    --cs-btn-upvote-border: #dddddd;
+    --cs-btn-upvote-hover-color: #e05a6a;
+    --cs-btn-upvote-voted-color: #e05a6a;
+
     --cs-message-success-bg: #d4edda;
     --cs-message-success-text: #155724;
     --cs-message-error-bg: #f8d7da;
@@ -86,6 +91,11 @@
         --cs-btn-reply-border: #374151;
         --cs-btn-reply-hover-bg: rgba(255, 255, 255, 0.05);
 
+        --cs-btn-upvote-color: #6b7280;
+        --cs-btn-upvote-border: #374151;
+        --cs-btn-upvote-hover-color: #f87171;
+        --cs-btn-upvote-voted-color: #f87171;
+
         --cs-message-success-bg: rgba(21, 87, 36, 0.4);
         --cs-message-success-text: #e2e3e5;
         --cs-message-error-bg: rgba(114, 28, 36, 0.4);
@@ -126,6 +136,10 @@
     --cs-btn-reply-color: #60a5fa;
     --cs-btn-reply-border: #374151;
     --cs-btn-reply-hover-bg: rgba(255, 255, 255, 0.05);
+    --cs-btn-upvote-color: #6b7280;
+    --cs-btn-upvote-border: #374151;
+    --cs-btn-upvote-hover-color: #f87171;
+    --cs-btn-upvote-voted-color: #f87171;
     --cs-message-success-bg: rgba(21, 87, 36, 0.4);
     --cs-message-success-text: #e2e3e5;
     --cs-message-error-bg: rgba(114, 28, 36, 0.4);
@@ -292,6 +306,48 @@
 
 #comments-container .comments-system button.btn-reply:hover {
     background-color: var(--cs-btn-reply-hover-bg) !important;
+}
+
+#comments-container .comments-system button.btn-upvote {
+    background: transparent !important;
+    border: 1px solid var(--cs-btn-upvote-border) !important;
+    color: var(--cs-btn-upvote-color) !important;
+    padding: 0.4rem 0.8rem;
+    font-size: 0.85rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    transition: color 0.2s, border-color 0.2s, transform 0.1s !important;
+}
+
+#comments-container .comments-system button.btn-upvote:hover {
+    color: var(--cs-btn-upvote-hover-color) !important;
+    border-color: var(--cs-btn-upvote-hover-color) !important;
+    background: transparent !important;
+}
+
+#comments-container .comments-system button.btn-upvote.voted {
+    color: var(--cs-btn-upvote-voted-color) !important;
+    border-color: var(--cs-btn-upvote-voted-color) !important;
+}
+
+#comments-container .comments-system button.btn-upvote:active {
+    transform: scale(0.92);
+}
+
+#comments-container .comments-system button.btn-upvote:disabled {
+    opacity: 0.5 !important;
+    cursor: default;
+}
+
+.comments-system .upvote-icon {
+    font-style: normal;
+    line-height: 1;
+}
+
+.comments-system .upvote-count {
+    font-size: 0.85rem;
+    min-width: 0.5ch;
 }
 
 /* Form Messages */

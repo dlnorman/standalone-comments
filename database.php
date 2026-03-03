@@ -162,6 +162,17 @@ function initDatabase() {
 
             CREATE INDEX IF NOT EXISTS idx_session_token ON sessions(token);
             CREATE INDEX IF NOT EXISTS idx_session_expires ON sessions(expires_at);
+
+            CREATE TABLE IF NOT EXISTS votes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                comment_id INTEGER NOT NULL,
+                ip_address TEXT NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (comment_id) REFERENCES comments(id) ON DELETE CASCADE,
+                UNIQUE(comment_id, ip_address)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_votes_comment ON votes(comment_id);
         ";
     }
 
@@ -260,6 +271,22 @@ function migrateDatabase() {
             $db->exec("CREATE INDEX IF NOT EXISTS idx_session_token ON sessions(token)");
             $db->exec("CREATE INDEX IF NOT EXISTS idx_session_expires ON sessions(expires_at)");
             error_log('Database migration: sessions table created');
+        }
+
+        // Create votes table if it doesn't exist
+        if (!tableExists($db, 'votes')) {
+            $db->exec("
+                CREATE TABLE IF NOT EXISTS votes (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    comment_id INTEGER NOT NULL,
+                    ip_address TEXT NOT NULL,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (comment_id) REFERENCES comments(id) ON DELETE CASCADE,
+                    UNIQUE(comment_id, ip_address)
+                )
+            ");
+            $db->exec("CREATE INDEX IF NOT EXISTS idx_votes_comment ON votes(comment_id)");
+            error_log('Database migration: votes table created');
         }
 
         // Clean up expired sessions (5% chance to avoid overhead on every request)
