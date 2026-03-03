@@ -432,7 +432,10 @@ if ($method === 'GET' && $action === 'comments') {
     $stmt = $db->prepare("
         SELECT c.id, c.page_url, c.parent_id, c.author_name, c.author_email, c.author_url,
                c.content, c.created_at, c.status,
-               COALESCE((SELECT COUNT(*) FROM votes WHERE comment_id = c.id), 0) AS vote_count
+               COALESCE((SELECT COUNT(*) FROM votes WHERE comment_id = c.id AND reaction_type = 'heart'), 0) AS votes_heart,
+               COALESCE((SELECT COUNT(*) FROM votes WHERE comment_id = c.id AND reaction_type = 'thumbsup'), 0) AS votes_thumbsup,
+               COALESCE((SELECT COUNT(*) FROM votes WHERE comment_id = c.id AND reaction_type = 'lightbulb'), 0) AS votes_lightbulb,
+               COALESCE((SELECT COUNT(*) FROM votes WHERE comment_id = c.id AND reaction_type = 'funny'), 0) AS votes_funny
         FROM comments c
         WHERE c.page_url = ? AND c.status IN ($placeholders)
         ORDER BY c.created_at ASC
@@ -502,13 +505,19 @@ if ($method === 'GET' && $action === 'recent') {
 }
 
 // POST /api.php?action=vote
-// Toggle an upvote on a comment (one per IP address)
+// Toggle a reaction on a comment (one per IP address per reaction type)
 if ($method === 'POST' && $action === 'vote') {
     $input = getInput();
     $commentId = isset($input['comment_id']) ? (int)$input['comment_id'] : 0;
 
     if ($commentId <= 0) {
         jsonResponse(['error' => 'Invalid comment ID'], 400);
+    }
+
+    $allowedTypes = ['heart', 'thumbsup', 'lightbulb', 'funny'];
+    $reactionType = $input['reaction_type'] ?? 'heart';
+    if (!in_array($reactionType, $allowedTypes)) {
+        jsonResponse(['error' => 'Invalid reaction type'], 400);
     }
 
     // Verify the comment exists and is approved
@@ -520,27 +529,40 @@ if ($method === 'POST' && $action === 'vote') {
 
     $ip = $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0';
 
-    // Check if this IP has already voted on this comment
-    $existsStmt = $db->prepare("SELECT id FROM votes WHERE comment_id = ? AND ip_address = ?");
-    $existsStmt->execute([$commentId, $ip]);
+    // Rate limit: max 15 vote actions per IP per 60 seconds
+    $rateStmt = $db->prepare("SELECT COUNT(*) as count FROM vote_log WHERE ip_address = ? AND created_at > datetime('now', '-60 seconds')");
+    $rateStmt->execute([$ip]);
+    if ((int)$rateStmt->fetch()['count'] >= 15) {
+        jsonResponse(['error' => 'Too many reactions. Please slow down.'], 429);
+    }
+
+    // Check if this IP has already used this reaction on this comment
+    $existsStmt = $db->prepare("SELECT id FROM votes WHERE comment_id = ? AND ip_address = ? AND reaction_type = ?");
+    $existsStmt->execute([$commentId, $ip, $reactionType]);
     $existing = $existsStmt->fetch();
 
     if ($existing) {
-        // Already voted — remove the vote (toggle off)
-        $db->prepare("DELETE FROM votes WHERE comment_id = ? AND ip_address = ?")->execute([$commentId, $ip]);
+        // Already reacted — remove it (toggle off)
+        $db->prepare("DELETE FROM votes WHERE comment_id = ? AND ip_address = ? AND reaction_type = ?")->execute([$commentId, $ip, $reactionType]);
         $voted = false;
     } else {
-        // New vote — insert it
-        $db->prepare("INSERT INTO votes (comment_id, ip_address) VALUES (?, ?)")->execute([$commentId, $ip]);
+        // New reaction — insert it
+        $db->prepare("INSERT INTO votes (comment_id, ip_address, reaction_type) VALUES (?, ?, ?)")->execute([$commentId, $ip, $reactionType]);
         $voted = true;
     }
 
-    // Return updated count
-    $countStmt = $db->prepare("SELECT COUNT(*) as count FROM votes WHERE comment_id = ?");
-    $countStmt->execute([$commentId]);
-    $count = (int)$countStmt->fetch()['count'];
+    // Log this action for rate limiting
+    $db->prepare("INSERT INTO vote_log (ip_address) VALUES (?)")->execute([$ip]);
 
-    jsonResponse(['voted' => $voted, 'count' => $count]);
+    // Return per-type counts
+    $counts = [];
+    foreach ($allowedTypes as $type) {
+        $countStmt = $db->prepare("SELECT COUNT(*) as count FROM votes WHERE comment_id = ? AND reaction_type = ?");
+        $countStmt->execute([$commentId, $type]);
+        $counts[$type] = (int)$countStmt->fetch()['count'];
+    }
+
+    jsonResponse(['voted' => $voted, 'reaction_type' => $reactionType, 'counts' => $counts]);
 }
 
 // POST /api.php?action=post
@@ -788,11 +810,15 @@ if ($method === 'GET' && $action === 'pending') {
     $total = $countResult['total'];
 
     $stmt = $db->prepare("
-        SELECT id, page_url, parent_id, author_name, author_email, author_url,
-               content, created_at, status, ip_address
-        FROM comments
-        WHERE status = 'pending'
-        ORDER BY created_at DESC
+        SELECT c.id, c.page_url, c.parent_id, c.author_name, c.author_email, c.author_url,
+               c.content, c.created_at, c.status, c.ip_address,
+               COALESCE((SELECT COUNT(*) FROM votes WHERE comment_id = c.id AND reaction_type = 'heart'), 0) AS votes_heart,
+               COALESCE((SELECT COUNT(*) FROM votes WHERE comment_id = c.id AND reaction_type = 'thumbsup'), 0) AS votes_thumbsup,
+               COALESCE((SELECT COUNT(*) FROM votes WHERE comment_id = c.id AND reaction_type = 'lightbulb'), 0) AS votes_lightbulb,
+               COALESCE((SELECT COUNT(*) FROM votes WHERE comment_id = c.id AND reaction_type = 'funny'), 0) AS votes_funny
+        FROM comments c
+        WHERE c.status = 'pending'
+        ORDER BY c.created_at DESC
         LIMIT ? OFFSET ?
     ");
     $stmt->execute([$limit, $offset]);
@@ -825,10 +851,14 @@ if ($method === 'GET' && $action === 'all') {
     $total = $countResult['total'];
 
     $stmt = $db->prepare("
-        SELECT id, page_url, parent_id, author_name, author_email, author_url,
-               content, created_at, status, ip_address
-        FROM comments
-        ORDER BY created_at DESC
+        SELECT c.id, c.page_url, c.parent_id, c.author_name, c.author_email, c.author_url,
+               c.content, c.created_at, c.status, c.ip_address,
+               COALESCE((SELECT COUNT(*) FROM votes WHERE comment_id = c.id AND reaction_type = 'heart'), 0) AS votes_heart,
+               COALESCE((SELECT COUNT(*) FROM votes WHERE comment_id = c.id AND reaction_type = 'thumbsup'), 0) AS votes_thumbsup,
+               COALESCE((SELECT COUNT(*) FROM votes WHERE comment_id = c.id AND reaction_type = 'lightbulb'), 0) AS votes_lightbulb,
+               COALESCE((SELECT COUNT(*) FROM votes WHERE comment_id = c.id AND reaction_type = 'funny'), 0) AS votes_funny
+        FROM comments c
+        ORDER BY c.created_at DESC
         LIMIT ? OFFSET ?
     ");
     $stmt->execute([$limit, $offset]);

@@ -489,6 +489,15 @@
                     <div><strong>Page:</strong> ${escapeHtml(comment.page_url)}</div>
                     <div><strong>IP:</strong> ${escapeHtml(comment.ip_address || 'N/A')}</div>
                     <div class="comment-content">${escapeHtml(comment.content)}</div>
+                    ${(() => {
+                        const reactionSummary = [
+                            { emoji: '♥', count: comment.votes_heart || 0 },
+                            { emoji: '👍', count: comment.votes_thumbsup || 0 },
+                            { emoji: '💡', count: comment.votes_lightbulb || 0 },
+                            { emoji: '😄', count: comment.votes_funny || 0 },
+                        ].filter(r => r.count > 0).map(r => `${r.emoji} ${r.count}`).join('&nbsp;&nbsp;');
+                        return reactionSummary ? `<div><strong>Reactions:</strong> ${reactionSummary}</div>` : '';
+                    })()}
                     <div class="comment-actions">
                         <button class="btn btn-success" onclick="moderateComment(${comment.id}, 'approved')">Approve</button>
                         <button class="btn btn-warning" onclick="moderateComment(${comment.id}, 'spam')">Mark as Spam</button>

@@ -35,10 +35,13 @@
     --cs-btn-reply-border: #dddddd;
     --cs-btn-reply-hover-bg: rgba(0, 0, 0, 0.05);
 
-    --cs-btn-upvote-color: #888888;
-    --cs-btn-upvote-border: #dddddd;
-    --cs-btn-upvote-hover-color: #e05a6a;
-    --cs-btn-upvote-voted-color: #e05a6a;
+    --cs-btn-reaction-color: #888888;
+    --cs-btn-reaction-border: #dddddd;
+    --cs-btn-reaction-hover-bg: rgba(0, 0, 0, 0.04);
+    --cs-reaction-heart-color: #e05a6a;
+    --cs-reaction-thumbsup-color: #4a90e2;
+    --cs-reaction-lightbulb-color: #f59e0b;
+    --cs-reaction-funny-color: #10b981;
 
     --cs-message-success-bg: #d4edda;
     --cs-message-success-text: #155724;
@@ -91,10 +94,13 @@
         --cs-btn-reply-border: #374151;
         --cs-btn-reply-hover-bg: rgba(255, 255, 255, 0.05);
 
-        --cs-btn-upvote-color: #6b7280;
-        --cs-btn-upvote-border: #374151;
-        --cs-btn-upvote-hover-color: #f87171;
-        --cs-btn-upvote-voted-color: #f87171;
+        --cs-btn-reaction-color: #6b7280;
+        --cs-btn-reaction-border: #374151;
+        --cs-btn-reaction-hover-bg: rgba(255, 255, 255, 0.05);
+        --cs-reaction-heart-color: #f87171;
+        --cs-reaction-thumbsup-color: #60a5fa;
+        --cs-reaction-lightbulb-color: #fbbf24;
+        --cs-reaction-funny-color: #34d399;
 
         --cs-message-success-bg: rgba(21, 87, 36, 0.4);
         --cs-message-success-text: #e2e3e5;
@@ -136,10 +142,13 @@
     --cs-btn-reply-color: #60a5fa;
     --cs-btn-reply-border: #374151;
     --cs-btn-reply-hover-bg: rgba(255, 255, 255, 0.05);
-    --cs-btn-upvote-color: #6b7280;
-    --cs-btn-upvote-border: #374151;
-    --cs-btn-upvote-hover-color: #f87171;
-    --cs-btn-upvote-voted-color: #f87171;
+    --cs-btn-reaction-color: #6b7280;
+    --cs-btn-reaction-border: #374151;
+    --cs-btn-reaction-hover-bg: rgba(255, 255, 255, 0.05);
+    --cs-reaction-heart-color: #f87171;
+    --cs-reaction-thumbsup-color: #60a5fa;
+    --cs-reaction-lightbulb-color: #fbbf24;
+    --cs-reaction-funny-color: #34d399;
     --cs-message-success-bg: rgba(21, 87, 36, 0.4);
     --cs-message-success-text: #e2e3e5;
     --cs-message-error-bg: rgba(114, 28, 36, 0.4);
@@ -308,45 +317,76 @@
     background-color: var(--cs-btn-reply-hover-bg) !important;
 }
 
-#comments-container .comments-system button.btn-upvote {
+.comments-system .reactions-bar {
+    display: flex;
+    gap: 0.4rem;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+#comments-container .comments-system button.btn-reaction {
     background: transparent !important;
-    border: 1px solid var(--cs-btn-upvote-border) !important;
-    color: var(--cs-btn-upvote-color) !important;
-    padding: 0.4rem 0.8rem;
-    font-size: 0.85rem;
+    border: 1px solid var(--cs-btn-reaction-border) !important;
+    color: var(--cs-btn-reaction-color) !important;
+    padding: 0.3rem 0.6rem;
+    font-size: 0.82rem;
     display: inline-flex;
     align-items: center;
-    gap: 0.3rem;
-    transition: color 0.2s, border-color 0.2s, transform 0.1s !important;
+    gap: 0.25rem;
+    transition: color 0.2s, border-color 0.2s, background 0.2s, transform 0.1s !important;
+    border-radius: 4px;
 }
 
-#comments-container .comments-system button.btn-upvote:hover {
-    color: var(--cs-btn-upvote-hover-color) !important;
-    border-color: var(--cs-btn-upvote-hover-color) !important;
-    background: transparent !important;
+#comments-container .comments-system button.btn-reaction:hover {
+    background: var(--cs-btn-reaction-hover-bg) !important;
 }
 
-#comments-container .comments-system button.btn-upvote.voted {
-    color: var(--cs-btn-upvote-voted-color) !important;
-    border-color: var(--cs-btn-upvote-voted-color) !important;
-}
-
-#comments-container .comments-system button.btn-upvote:active {
+#comments-container .comments-system button.btn-reaction:active {
     transform: scale(0.92);
 }
 
-#comments-container .comments-system button.btn-upvote:disabled {
+#comments-container .comments-system button.btn-reaction:disabled {
     opacity: 0.5 !important;
     cursor: default;
 }
 
-.comments-system .upvote-icon {
-    font-style: normal;
-    line-height: 1;
+#comments-container .comments-system button.btn-reaction-heart.voted {
+    color: var(--cs-reaction-heart-color) !important;
+    border-color: var(--cs-reaction-heart-color) !important;
 }
 
-.comments-system .upvote-count {
-    font-size: 0.85rem;
+#comments-container .comments-system button.btn-reaction-thumbsup.voted {
+    color: var(--cs-reaction-thumbsup-color) !important;
+    border-color: var(--cs-reaction-thumbsup-color) !important;
+}
+
+#comments-container .comments-system button.btn-reaction-lightbulb.voted {
+    color: var(--cs-reaction-lightbulb-color) !important;
+    border-color: var(--cs-reaction-lightbulb-color) !important;
+}
+
+#comments-container .comments-system button.btn-reaction-funny.voted {
+    color: var(--cs-reaction-funny-color) !important;
+    border-color: var(--cs-reaction-funny-color) !important;
+}
+
+.comments-system .reaction-emoji {
+    font-style: normal;
+    line-height: 1;
+    filter: grayscale(1) opacity(0.55);
+    transition: filter 0.2s;
+}
+
+.comments-system button.btn-reaction.voted .reaction-emoji {
+    filter: none;
+}
+
+.comments-system button.btn-reaction:hover .reaction-emoji {
+    filter: grayscale(0.2) opacity(0.85);
+}
+
+.comments-system .reaction-count {
+    font-size: 0.82rem;
     min-width: 0.5ch;
 }
 

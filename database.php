@@ -167,12 +167,21 @@ function initDatabase() {
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 comment_id INTEGER NOT NULL,
                 ip_address TEXT NOT NULL,
+                reaction_type TEXT NOT NULL DEFAULT 'heart',
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (comment_id) REFERENCES comments(id) ON DELETE CASCADE,
-                UNIQUE(comment_id, ip_address)
+                UNIQUE(comment_id, ip_address, reaction_type)
             );
 
             CREATE INDEX IF NOT EXISTS idx_votes_comment ON votes(comment_id);
+
+            CREATE TABLE IF NOT EXISTS vote_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ip_address TEXT NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_vote_log_ip ON vote_log(ip_address, created_at);
         ";
     }
 
@@ -280,13 +289,58 @@ function migrateDatabase() {
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     comment_id INTEGER NOT NULL,
                     ip_address TEXT NOT NULL,
+                    reaction_type TEXT NOT NULL DEFAULT 'heart',
                     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                     FOREIGN KEY (comment_id) REFERENCES comments(id) ON DELETE CASCADE,
-                    UNIQUE(comment_id, ip_address)
+                    UNIQUE(comment_id, ip_address, reaction_type)
                 )
             ");
             $db->exec("CREATE INDEX IF NOT EXISTS idx_votes_comment ON votes(comment_id)");
             error_log('Database migration: votes table created');
+        } else {
+            // Migrate existing votes table to add reaction_type if missing
+            $pragma = $db->query("PRAGMA table_info(votes)")->fetchAll();
+            $hasReactionType = false;
+            foreach ($pragma as $col) {
+                if ($col['name'] === 'reaction_type') { $hasReactionType = true; break; }
+            }
+            if (!$hasReactionType) {
+                $db->exec("
+                    CREATE TABLE votes_new (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        comment_id INTEGER NOT NULL,
+                        ip_address TEXT NOT NULL,
+                        reaction_type TEXT NOT NULL DEFAULT 'heart',
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        FOREIGN KEY (comment_id) REFERENCES comments(id) ON DELETE CASCADE,
+                        UNIQUE(comment_id, ip_address, reaction_type)
+                    )
+                ");
+                $db->exec("INSERT INTO votes_new (id, comment_id, ip_address, reaction_type, created_at)
+                    SELECT id, comment_id, ip_address, 'heart', created_at FROM votes");
+                $db->exec("DROP TABLE votes");
+                $db->exec("ALTER TABLE votes_new RENAME TO votes");
+                $db->exec("CREATE INDEX IF NOT EXISTS idx_votes_comment ON votes(comment_id)");
+                error_log('Database migration: votes table updated with reaction_type');
+            }
+        }
+
+        // Create vote_log table if it doesn't exist
+        if (!tableExists($db, 'vote_log')) {
+            $db->exec("
+                CREATE TABLE IF NOT EXISTS vote_log (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    ip_address TEXT NOT NULL,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                )
+            ");
+            $db->exec("CREATE INDEX IF NOT EXISTS idx_vote_log_ip ON vote_log(ip_address, created_at)");
+            error_log('Database migration: vote_log table created');
+        }
+
+        // Clean up old vote_log entries (5% chance)
+        if (rand(1, 20) === 1) {
+            $db->exec("DELETE FROM vote_log WHERE created_at < datetime('now', '-1 hour')");
         }
 
         // Clean up expired sessions (5% chance to avoid overhead on every request)

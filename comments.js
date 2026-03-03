@@ -20,24 +20,28 @@ class CommentSystem {
 
     getVotedComments() {
         try {
-            return JSON.parse(localStorage.getItem('comment_votes') || '[]');
+            const data = JSON.parse(localStorage.getItem('comment_votes') || '{}');
+            // Fallback: if old format (array), convert to empty object
+            if (Array.isArray(data)) return {};
+            return data;
         } catch (e) {
-            return [];
+            return {};
         }
     }
 
-    setVotedComments(ids) {
+    setVotedComments(data) {
         try {
-            localStorage.setItem('comment_votes', JSON.stringify(ids));
+            localStorage.setItem('comment_votes', JSON.stringify(data));
         } catch (e) {}
     }
 
-    hasVoted(commentId) {
-        return this.getVotedComments().includes(commentId);
+    hasVoted(commentId, reactionType) {
+        const data = this.getVotedComments();
+        return (data[commentId] || []).includes(reactionType);
     }
 
-    async handleVote(commentId) {
-        const btn = document.querySelector(`.btn-upvote[data-comment-id="${commentId}"]`);
+    async handleVote(commentId, reactionType) {
+        const btn = document.querySelector(`.btn-reaction[data-comment-id="${commentId}"][data-reaction="${reactionType}"]`);
         if (!btn || btn.disabled) return;
 
         btn.disabled = true;
@@ -45,28 +49,31 @@ class CommentSystem {
             const response = await fetch(`${this.apiUrl}?action=vote`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ comment_id: commentId })
+                body: JSON.stringify({ comment_id: commentId, reaction_type: reactionType })
             });
             const result = await response.json();
             if (response.ok) {
                 // Update localStorage
-                let voted = this.getVotedComments();
+                const data = this.getVotedComments();
+                const key = String(commentId);
+                if (!data[key]) data[key] = [];
                 if (result.voted) {
-                    if (!voted.includes(commentId)) voted.push(commentId);
+                    if (!data[key].includes(reactionType)) data[key].push(reactionType);
                 } else {
-                    voted = voted.filter(id => id !== commentId);
+                    data[key] = data[key].filter(r => r !== reactionType);
+                    if (data[key].length === 0) delete data[key];
                 }
-                this.setVotedComments(voted);
+                this.setVotedComments(data);
 
                 // Update button
                 btn.classList.toggle('voted', result.voted);
-                const countEl = btn.querySelector('.upvote-count');
-                if (countEl) countEl.textContent = result.count > 0 ? result.count : '';
+                const countEl = btn.querySelector('.reaction-count');
+                if (countEl) countEl.textContent = result.counts[reactionType] > 0 ? result.counts[reactionType] : '';
             }
         } catch (e) {
             // Silently fail — voting is non-critical
         } finally {
-            btn.disabled = false;
+            setTimeout(() => { btn.disabled = false; }, 500);
         }
     }
 
@@ -259,15 +266,23 @@ class CommentSystem {
         const isPending = comment.status === 'pending';
         const pendingBadge = isPending ? '<span class="badge-pending">Pending Moderation</span>' : '';
 
-        const voteCount = comment.vote_count || 0;
-        const voted = this.hasVoted(comment.id);
-        const countDisplay = voteCount > 0 ? voteCount : '';
-        const upvoteBtn = isPending ? '' : `
-            <button class="btn-upvote${voted ? ' voted' : ''}" data-comment-id="${comment.id}"
-                    onclick="commentsWidget.handleVote(${comment.id})"
-                    title="${voted ? 'Remove your appreciation' : 'Appreciate this comment'}">
-                <span class="upvote-icon">&#9829;</span><span class="upvote-count">${countDisplay}</span>
-            </button>`;
+        const reactions = [
+            { type: 'heart',     emoji: '♥',  label: 'Love it' },
+            { type: 'thumbsup',  emoji: '👍', label: 'Good point' },
+            { type: 'lightbulb', emoji: '💡', label: 'Interesting' },
+            { type: 'funny',     emoji: '😄', label: 'Funny' },
+        ];
+        const reactionsHtml = reactions.map(r => {
+            const count = comment[`votes_${r.type}`] || 0;
+            const voted = this.hasVoted(comment.id, r.type);
+            return `<button class="btn-reaction btn-reaction-${r.type}${voted ? ' voted' : ''}"
+                            data-comment-id="${comment.id}" data-reaction="${r.type}"
+                            onclick="commentsWidget.handleVote(${comment.id}, '${r.type}')"
+                            title="${r.label}">
+                        <span class="reaction-emoji">${r.emoji}</span><span class="reaction-count">${count > 0 ? count : ''}</span>
+                    </button>`;
+        }).join('');
+        const upvoteBtn = isPending ? '' : `<div class="reactions-bar">${reactionsHtml}</div>`;
 
         let html = `
             <div class="comment ${isPending ? 'comment-pending' : ''}" id="comment-${comment.id}" style="margin-left: ${depth * 40}px">
