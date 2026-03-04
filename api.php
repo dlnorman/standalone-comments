@@ -406,6 +406,42 @@ function sendNotificationEmail($commentId, $pageUrl, $parentId, $authorName, $co
     }
 }
 
+function sendPostReactionNotificationEmail($pageUrl, $reactionType) {
+    $db = getDatabase();
+
+    // Check if notifications are enabled
+    $stmt = $db->prepare("SELECT value FROM settings WHERE key = 'enable_notifications'");
+    $stmt->execute();
+    $result = $stmt->fetch();
+    if (!$result || $result['value'] !== 'true') {
+        return;
+    }
+
+    $stmt = $db->prepare("SELECT value FROM settings WHERE key = 'admin_email'");
+    $stmt->execute();
+    $result = $stmt->fetch();
+    if (!$result || empty($result['value'])) {
+        return;
+    }
+    $adminEmail = $result['value'];
+
+    $reactionLabels = [
+        'heart'     => '♥ heart',
+        'thumbsup'  => '👍 thumbs up',
+        'lightbulb' => '💡 lightbulb',
+        'funny'     => '😄 laugh',
+    ];
+    $reactionLabel = $reactionLabels[$reactionType] ?? $reactionType;
+    $fullPageUrl = "https://" . $_SERVER['HTTP_HOST'] . $pageUrl;
+    $safePageUrl = sanitizeEmailContent($fullPageUrl);
+
+    $subject = "New post reaction on your site";
+    $message = "Someone left a {$reactionLabel} reaction on {$safePageUrl}.\n\n";
+    $message .= "View post reactions: https://" . $_SERVER['HTTP_HOST'] . "/comments/admin-post-reactions.html\n";
+
+    queueEmail(null, $adminEmail, 'Admin', 'post_reaction', $subject, $message);
+}
+
 function sendReactionNotificationEmail($commentId, $pageUrl, $authorName, $authorEmail, $reactionType) {
     if (empty($authorEmail)) {
         return;
@@ -430,7 +466,8 @@ function sendReactionNotificationEmail($commentId, $pageUrl, $authorName, $autho
     $reactionLabel = $reactionLabels[$reactionType] ?? $reactionType;
 
     $safeAuthorName = sanitizeEmailContent($authorName);
-    $safePageUrl = sanitizeEmailContent($pageUrl);
+    $fullPageUrl = "https://" . $_SERVER['HTTP_HOST'] . $pageUrl;
+    $safePageUrl = sanitizeEmailContent($fullPageUrl);
 
     // Get unsubscribe token if they have a subscription
     $stmt = $db->prepare("SELECT token FROM subscriptions WHERE page_url = ? AND email = ?");
@@ -1234,6 +1271,11 @@ if ($method === 'POST' && $action === 'post_reaction') {
 
     // Log for rate limiting
     $db->prepare("INSERT INTO vote_log (ip_address) VALUES (?)")->execute([$ip]);
+
+    // Notify admin of new post reaction
+    if ($voted) {
+        sendPostReactionNotificationEmail($pageUrl, $reactionType);
+    }
 
     // Return per-type counts
     $counts = [];
