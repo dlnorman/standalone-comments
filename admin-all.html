@@ -150,6 +150,16 @@
             padding: 1.5rem;
             border-radius: 8px;
             box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            transition: box-shadow 0.15s, transform 0.15s;
+        }
+
+        .stat-card[onclick] {
+            cursor: pointer;
+        }
+
+        .stat-card[onclick]:hover {
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            transform: translateY(-1px);
         }
 
         .stat-number {
@@ -417,23 +427,23 @@
 
         <div class="container">
             <div class="stats" id="stats">
-                <div class="stat-card">
+                <div class="stat-card" onclick="window.location.href='admin.html'">
                     <div class="stat-number" id="stat-pending">0</div>
                     <div class="stat-label">Pending</div>
                 </div>
-                <div class="stat-card">
+                <div class="stat-card" onclick="applyStatusFilter('approved')">
                     <div class="stat-number" id="stat-approved">0</div>
                     <div class="stat-label">Approved</div>
                 </div>
-                <div class="stat-card">
+                <div class="stat-card" onclick="applyStatusFilter('spam')">
                     <div class="stat-number" id="stat-spam">0</div>
                     <div class="stat-label">Spam</div>
                 </div>
-                <div class="stat-card">
+                <div class="stat-card" onclick="clearFilters()">
                     <div class="stat-number" id="stat-total">0</div>
                     <div class="stat-label">Total</div>
                 </div>
-                <div class="stat-card" style="cursor:pointer;" onclick="window.location.href='admin-post-reactions.html'">
+                <div class="stat-card" onclick="window.location.href='admin-post-reactions.html'">
                     <div class="stat-number" id="stat-post-reactions">—</div>
                     <div class="stat-label">Post Reactions</div>
                 </div>
@@ -584,6 +594,13 @@
         async function loadDashboard() {
             await loadAllComments();
             loadPostReactionsStat();
+            // Pre-apply status filter if provided in URL params
+            const params = new URLSearchParams(window.location.search);
+            const statusParam = params.get('status');
+            if (statusParam && ['approved', 'pending', 'spam'].includes(statusParam)) {
+                document.getElementById('filter-status').value = statusParam;
+                applyFilters();
+            }
         }
 
         async function loadPostReactionsStat() {
@@ -652,10 +669,19 @@
         }
 
         function applyFilters() {
-            currentPage = 1; // Reset to first page when filtering
+            currentPage = 1;
             const filtered = getFilteredComments();
             displayComments(filtered);
             renderPagination(filtered);
+        }
+
+        function applyStatusFilter(status) {
+            document.getElementById('filter-status').value = status;
+            document.getElementById('filter-name').value = '';
+            document.getElementById('filter-email').value = '';
+            document.getElementById('filter-url').value = '';
+            applyFilters();
+            document.querySelector('.filters').scrollIntoView({ behavior: 'smooth' });
         }
 
         function clearFilters() {

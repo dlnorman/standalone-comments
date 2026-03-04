@@ -132,6 +132,16 @@
             padding: 1.5rem;
             border-radius: 8px;
             box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            transition: box-shadow 0.15s, transform 0.15s;
+        }
+
+        .stat-card[onclick] {
+            cursor: pointer;
+        }
+
+        .stat-card[onclick]:hover {
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            transform: translateY(-1px);
         }
 
         .stat-number {
@@ -329,15 +339,15 @@
                     <div class="stat-number" id="stat-pending">0</div>
                     <div class="stat-label">Pending</div>
                 </div>
-                <div class="stat-card">
+                <div class="stat-card" onclick="window.location.href='admin-all.html?status=approved'">
                     <div class="stat-number" id="stat-approved">0</div>
                     <div class="stat-label">Approved</div>
                 </div>
-                <div class="stat-card">
+                <div class="stat-card" onclick="window.location.href='admin-all.html'">
                     <div class="stat-number" id="stat-total">0</div>
                     <div class="stat-label">Total</div>
                 </div>
-                <div class="stat-card" style="cursor:pointer;" onclick="window.location.href='admin-post-reactions.html'">
+                <div class="stat-card" onclick="window.location.href='admin-post-reactions.html'">
                     <div class="stat-number" id="stat-post-reactions">—</div>
                     <div class="stat-label">Post Reactions</div>
                 </div>
