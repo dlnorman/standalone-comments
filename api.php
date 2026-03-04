@@ -406,6 +406,50 @@ function sendNotificationEmail($commentId, $pageUrl, $parentId, $authorName, $co
     }
 }
 
+function sendReactionNotificationEmail($commentId, $pageUrl, $authorName, $authorEmail, $reactionType) {
+    if (empty($authorEmail)) {
+        return;
+    }
+
+    $db = getDatabase();
+
+    // Check if notifications are enabled
+    $stmt = $db->prepare("SELECT value FROM settings WHERE key = 'enable_notifications'");
+    $stmt->execute();
+    $result = $stmt->fetch();
+    if (!$result || $result['value'] !== 'true') {
+        return;
+    }
+
+    $reactionLabels = [
+        'heart'     => '♥ heart',
+        'thumbsup'  => '👍 thumbs up',
+        'lightbulb' => '💡 lightbulb',
+        'funny'     => '😄 laugh',
+    ];
+    $reactionLabel = $reactionLabels[$reactionType] ?? $reactionType;
+
+    $safeAuthorName = sanitizeEmailContent($authorName);
+    $safePageUrl = sanitizeEmailContent($pageUrl);
+
+    // Get unsubscribe token if they have a subscription
+    $stmt = $db->prepare("SELECT token FROM subscriptions WHERE page_url = ? AND email = ?");
+    $stmt->execute([$pageUrl, $authorEmail]);
+    $subData = $stmt->fetch();
+    $unsubscribeUrl = $subData ? "https://" . $_SERVER['HTTP_HOST'] . "/comments/unsubscribe.php?token=" . $subData['token'] : "";
+
+    $subject = "Someone reacted to your comment";
+    $message = "Hello {$safeAuthorName},\n\n";
+    $message .= "Someone left a {$reactionLabel} reaction on your comment at {$safePageUrl}.\n\n";
+    $message .= "View your comment: {$safePageUrl}#comment-{$commentId}\n\n";
+    if ($unsubscribeUrl) {
+        $message .= "---\n";
+        $message .= "To unsubscribe from notifications: {$unsubscribeUrl}\n";
+    }
+
+    queueEmail($commentId, $authorEmail, $safeAuthorName, 'reaction', $subject, $message);
+}
+
 // GET /api.php?action=comments&url=...
 if ($method === 'GET' && $action === 'comments') {
     $pageUrl = $_GET['url'] ?? '';
@@ -531,9 +575,10 @@ if ($method === 'POST' && $action === 'vote') {
     }
 
     // Verify the comment exists and is approved
-    $checkStmt = $db->prepare("SELECT id FROM comments WHERE id = ? AND status = 'approved'");
+    $checkStmt = $db->prepare("SELECT id, author_name, author_email, page_url FROM comments WHERE id = ? AND status = 'approved'");
     $checkStmt->execute([$commentId]);
-    if (!$checkStmt->fetch()) {
+    $comment = $checkStmt->fetch();
+    if (!$comment) {
         jsonResponse(['error' => 'Comment not found'], 404);
     }
 
@@ -563,6 +608,11 @@ if ($method === 'POST' && $action === 'vote') {
 
     // Log this action for rate limiting
     $db->prepare("INSERT INTO vote_log (ip_address) VALUES (?)")->execute([$ip]);
+
+    // Notify comment author of new reaction
+    if ($voted) {
+        sendReactionNotificationEmail($commentId, $comment['page_url'], $comment['author_name'], $comment['author_email'], $reactionType);
+    }
 
     // Return per-type counts
     $counts = [];
