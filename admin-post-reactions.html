@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'">
+    <title>Comment System Admin - Post Reactions</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background: #f5f5f5;
+            color: #333;
+            line-height: 1.6;
+        }
+
+        .container { max-width: 1200px; margin: 0 auto; padding: 2rem; }
+
+        header {
+            background: white;
+            padding: 1.5rem 2rem;
+            margin-bottom: 2rem;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        h1 { color: #4a90e2; }
+
+        .nav { display: flex; gap: 1rem; }
+
+        .nav a {
+            text-decoration: none;
+            color: #666;
+            padding: 0.5rem 1rem;
+            border-radius: 4px;
+            transition: background 0.2s;
+        }
+
+        .nav a:hover, .nav a.active {
+            background: #e3f2fd;
+            color: #4a90e2;
+        }
+
+        #login-section {
+            max-width: 400px;
+            margin: 100px auto;
+            background: white;
+            padding: 2rem;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+
+        #admin-section { display: none; }
+
+        .form-group { margin-bottom: 1rem; }
+
+        label { display: block; margin-bottom: 0.5rem; font-weight: 600; }
+
+        input[type="password"] {
+            width: 100%;
+            padding: 0.75rem;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 1rem;
+        }
+
+        .btn {
+            padding: 0.75rem 1.5rem;
+            border: none;
+            border-radius: 4px;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+
+        .btn-primary { background-color: #4a90e2; color: white; }
+        .btn-primary:hover { background-color: #357abd; }
+        .btn-danger { background-color: #dc3545; color: white; }
+        .btn-danger:hover { background-color: #c82333; }
+
+        .message { padding: 1rem; margin-bottom: 1rem; border-radius: 4px; }
+        .message.error { background-color: #f8d7da; color: #721c24; }
+        .message.success { background-color: #d4edda; color: #155724; }
+
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+
+        .stat-card {
+            background: white;
+            padding: 1.5rem;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .stat-number { font-size: 2rem; font-weight: bold; color: #4a90e2; }
+        .stat-label { color: #888; margin-top: 0.5rem; }
+
+        .section-card {
+            background: white;
+            padding: 2rem;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .section-card h2 { margin-bottom: 1.5rem; }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        th, td {
+            text-align: left;
+            padding: 0.75rem 1rem;
+            border-bottom: 1px solid #e0e0e0;
+        }
+
+        th {
+            font-weight: 600;
+            color: #555;
+            font-size: 0.9rem;
+            background: #f9f9f9;
+        }
+
+        tr:last-child td { border-bottom: none; }
+
+        tr:hover td { background: #fafafa; }
+
+        .page-url a {
+            color: #4a90e2;
+            text-decoration: none;
+            word-break: break-all;
+        }
+
+        .page-url a:hover { text-decoration: underline; }
+
+        .reaction-cell { text-align: center; white-space: nowrap; }
+
+        .reaction-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.25rem;
+            font-size: 0.9rem;
+        }
+
+        .total-cell { font-weight: 600; color: #4a90e2; text-align: center; }
+
+        .actions-cell { text-align: right; }
+
+        .btn-sm {
+            padding: 0.35rem 0.75rem;
+            font-size: 0.85rem;
+        }
+
+        .no-data {
+            text-align: center;
+            padding: 2rem;
+            color: #888;
+            font-style: italic;
+        }
+
+        @media (max-width: 768px) {
+            .container { padding: 1rem; }
+
+            header {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 1rem;
+                padding: 1rem;
+            }
+
+            h1 { font-size: 1.5rem; }
+
+            .nav { width: 100%; flex-wrap: wrap; }
+
+            .nav a { flex: 1; min-width: 100px; text-align: center; }
+
+            .stats { grid-template-columns: 1fr 1fr; }
+
+            #login-section { margin: 20px auto; padding: 1.5rem; }
+
+            table { font-size: 0.85rem; }
+
+            th, td { padding: 0.5rem; }
+        }
+    </style>
+</head>
+<body>
+    <div id="login-section">
+        <h2 style="margin-bottom: 1.5rem;">Admin Login</h2>
+        <div id="login-message"></div>
+        <form id="login-form">
+            <div class="form-group">
+                <label for="password">Password</label>
+                <input type="password" id="password" required>
+            </div>
+            <button type="submit" class="btn btn-primary" style="width: 100%;">Login</button>
+        </form>
+    </div>
+
+    <div id="admin-section">
+        <header>
+            <h1>Comment System Admin - Post Reactions</h1>
+            <div class="nav">
+                <a href="admin.html">Pending</a>
+                <a href="admin-all.html">All Comments</a>
+                <a href="admin-subscriptions.html">Subscriptions</a>
+                <a href="admin-post-reactions.html" class="active">Post Reactions</a>
+            </div>
+        </header>
+
+        <div class="container">
+            <div class="stats" id="stats">
+                <div class="stat-card">
+                    <div class="stat-number" id="stat-total-reactions">0</div>
+                    <div class="stat-label">Total Reactions</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number" id="stat-total-pages">0</div>
+                    <div class="stat-label">Pages with Reactions</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number" id="stat-heart">0</div>
+                    <div class="stat-label">♥ Love it</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number" id="stat-thumbsup">0</div>
+                    <div class="stat-label">👍 Good point</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number" id="stat-lightbulb">0</div>
+                    <div class="stat-label">💡 Interesting</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number" id="stat-funny">0</div>
+                    <div class="stat-label">😄 Funny</div>
+                </div>
+            </div>
+
+            <div class="section-card">
+                <h2>Reactions by Page</h2>
+                <div id="reactions-message"></div>
+                <div id="reactions-table">
+                    <p class="no-data">Loading...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_URL = 'api.php';
+        let csrfToken = null;
+
+        function getCSRFToken() {
+            const name = 'csrf_token=';
+            const decodedCookie = decodeURIComponent(document.cookie);
+            for (let c of decodedCookie.split(';')) {
+                c = c.trim();
+                if (c.startsWith(name)) return c.substring(name.length);
+            }
+            return null;
+        }
+
+        async function ensureCSRFToken() {
+            if (!csrfToken) csrfToken = getCSRFToken();
+            if (!csrfToken) {
+                try {
+                    const response = await fetch(`${API_URL}?action=csrf_token`, { credentials: 'include' });
+                    const data = await response.json();
+                    csrfToken = data.token;
+                } catch (e) {}
+            }
+            return csrfToken;
+        }
+
+        async function checkAuth() {
+            try {
+                const response = await fetch(`${API_URL}?action=post_reactions_summary`, { credentials: 'include' });
+                if (response.ok) {
+                    await ensureCSRFToken();
+                    document.getElementById('login-section').style.display = 'none';
+                    document.getElementById('admin-section').style.display = 'block';
+                    loadDashboard();
+                }
+            } catch (e) {}
+        }
+
+        checkAuth();
+
+        document.getElementById('login-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const password = document.getElementById('password').value;
+            const messageEl = document.getElementById('login-message');
+            try {
+                const response = await fetch(`${API_URL}?action=login`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include',
+                    body: JSON.stringify({ password })
+                });
+                const result = await response.json();
+                if (response.ok) {
+                    csrfToken = result.csrf_token || getCSRFToken();
+                    document.getElementById('login-section').style.display = 'none';
+                    document.getElementById('admin-section').style.display = 'block';
+                    loadDashboard();
+                } else {
+                    messageEl.innerHTML = `<div class="message error">${result.error}</div>`;
+                }
+            } catch (e) {
+                messageEl.innerHTML = '<div class="message error">Network error</div>';
+            }
+        });
+
+        async function loadDashboard() {
+            await loadReactions();
+        }
+
+        async function loadReactions() {
+            const container = document.getElementById('reactions-table');
+            try {
+                const ts = Date.now();
+                const response = await fetch(`${API_URL}?action=post_reactions_summary&_=${ts}`, {
+                    credentials: 'include',
+                    cache: 'no-store'
+                });
+                const data = await response.json();
+
+                if (response.ok) {
+                    updateStats(data);
+                    displayReactions(data.pages || []);
+                } else {
+                    container.innerHTML = `<div class="message error">${data.error || 'Failed to load'}</div>`;
+                }
+            } catch (e) {
+                container.innerHTML = `<div class="message error">Network error: ${e.message}</div>`;
+            }
+        }
+
+        function updateStats(data) {
+            const pages = data.pages || [];
+            document.getElementById('stat-total-reactions').textContent = data.total || 0;
+            document.getElementById('stat-total-pages').textContent = pages.length;
+            document.getElementById('stat-heart').textContent     = pages.reduce((s, p) => s + (parseInt(p.heart)     || 0), 0);
+            document.getElementById('stat-thumbsup').textContent  = pages.reduce((s, p) => s + (parseInt(p.thumbsup)  || 0), 0);
+            document.getElementById('stat-lightbulb').textContent = pages.reduce((s, p) => s + (parseInt(p.lightbulb) || 0), 0);
+            document.getElementById('stat-funny').textContent     = pages.reduce((s, p) => s + (parseInt(p.funny)     || 0), 0);
+        }
+
+        function displayReactions(pages) {
+            const container = document.getElementById('reactions-table');
+            if (pages.length === 0) {
+                container.innerHTML = '<p class="no-data">No post reactions yet.</p>';
+                return;
+            }
+
+            container.innerHTML = `
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Page</th>
+                            <th class="reaction-cell">♥</th>
+                            <th class="reaction-cell">👍</th>
+                            <th class="reaction-cell">💡</th>
+                            <th class="reaction-cell">😄</th>
+                            <th class="reaction-cell">Total</th>
+                            <th class="actions-cell">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${pages.map(p => `
+                            <tr id="row-${encodeURIComponent(p.page_url)}">
+                                <td class="page-url"><a href="${escapeHtml(p.page_url)}" target="_blank">${escapeHtml(p.page_url)}</a></td>
+                                <td class="reaction-cell">${p.heart || 0}</td>
+                                <td class="reaction-cell">${p.thumbsup || 0}</td>
+                                <td class="reaction-cell">${p.lightbulb || 0}</td>
+                                <td class="reaction-cell">${p.funny || 0}</td>
+                                <td class="total-cell">${p.total || 0}</td>
+                                <td class="actions-cell">
+                                    <button class="btn btn-danger btn-sm"
+                                            onclick="clearReactions('${escapeHtml(p.page_url).replace(/'/g, "\\'")}')">
+                                        Clear
+                                    </button>
+                                </td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            `;
+        }
+
+        async function clearReactions(pageUrl) {
+            if (!confirm(`Clear all post reactions for:\n${pageUrl}`)) return;
+
+            await ensureCSRFToken();
+            const messageEl = document.getElementById('reactions-message');
+
+            try {
+                const response = await fetch(
+                    `${API_URL}?action=delete_post_reactions&url=${encodeURIComponent(pageUrl)}&csrf_token=${encodeURIComponent(csrfToken)}`,
+                    { method: 'DELETE', credentials: 'include' }
+                );
+                const result = await response.json();
+                if (response.ok) {
+                    messageEl.innerHTML = '<div class="message success">Reactions cleared.</div>';
+                    setTimeout(() => { messageEl.innerHTML = ''; }, 3000);
+                    loadReactions();
+                } else {
+                    messageEl.innerHTML = `<div class="message error">${result.error || 'Failed to clear'}</div>`;
+                }
+            } catch (e) {
+                messageEl.innerHTML = '<div class="message error">Network error</div>';
+            }
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+    </script>
+</body>
+</html>

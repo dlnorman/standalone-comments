@@ -319,6 +319,7 @@
                 <a href="admin.html" class="active">Pending</a>
                 <a href="admin-all.html">All Comments</a>
                 <a href="admin-subscriptions.html">Subscriptions</a>
+                <a href="admin-post-reactions.html">Post Reactions</a>
             </div>
         </header>
 
@@ -335,6 +336,10 @@
                 <div class="stat-card">
                     <div class="stat-number" id="stat-total">0</div>
                     <div class="stat-label">Total</div>
+                </div>
+                <div class="stat-card" style="cursor:pointer;" onclick="window.location.href='admin-post-reactions.html'">
+                    <div class="stat-number" id="stat-post-reactions">—</div>
+                    <div class="stat-label">Post Reactions</div>
                 </div>
             </div>
 
@@ -442,6 +447,17 @@
         // Load dashboard
         async function loadDashboard() {
             await loadPendingComments();
+            loadPostReactionsStat();
+        }
+
+        async function loadPostReactionsStat() {
+            try {
+                const response = await fetch(`${API_URL}?action=post_reactions_summary`, { credentials: 'include' });
+                if (response.ok) {
+                    const data = await response.json();
+                    document.getElementById('stat-post-reactions').textContent = data.total || 0;
+                }
+            } catch (e) {}
         }
 
         async function loadPendingComments() {

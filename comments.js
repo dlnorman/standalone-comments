@@ -18,6 +18,85 @@ class CommentSystem {
         this.init();
     }
 
+    getPostReactions() {
+        try {
+            return JSON.parse(localStorage.getItem('post_reactions') || '{}');
+        } catch (e) {
+            return {};
+        }
+    }
+
+    setPostReactions(data) {
+        try {
+            localStorage.setItem('post_reactions', JSON.stringify(data));
+        } catch (e) {}
+    }
+
+    hasPostReacted(reactionType) {
+        const data = this.getPostReactions();
+        return (data[this.pageUrl] || []).includes(reactionType);
+    }
+
+    async handlePostReaction(reactionType) {
+        const btn = document.querySelector(`.btn-post-reaction[data-reaction="${reactionType}"]`);
+        if (!btn || btn.disabled) return;
+
+        btn.disabled = true;
+        try {
+            const response = await fetch(`${this.apiUrl}?action=post_reaction`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ page_url: this.pageUrl, reaction_type: reactionType })
+            });
+            const result = await response.json();
+            if (response.ok) {
+                const data = this.getPostReactions();
+                const key = this.pageUrl;
+                if (!data[key]) data[key] = [];
+                if (result.voted) {
+                    if (!data[key].includes(reactionType)) data[key].push(reactionType);
+                } else {
+                    data[key] = data[key].filter(r => r !== reactionType);
+                    if (data[key].length === 0) delete data[key];
+                }
+                this.setPostReactions(data);
+
+                btn.classList.toggle('voted', result.voted);
+                const countEl = btn.querySelector('.reaction-count');
+                if (countEl) countEl.textContent = result.counts[reactionType] > 0 ? result.counts[reactionType] : '';
+            }
+        } catch (e) {
+            // Silently fail
+        } finally {
+            setTimeout(() => { btn.disabled = false; }, 500);
+        }
+    }
+
+    renderPostReactionsSection(counts = {}) {
+        const reactions = [
+            { type: 'heart',     emoji: '♥',  label: 'Love it' },
+            { type: 'thumbsup',  emoji: '👍', label: 'Good point' },
+            { type: 'lightbulb', emoji: '💡', label: 'Interesting' },
+            { type: 'funny',     emoji: '😄', label: 'Funny' },
+        ];
+        const buttonsHtml = reactions.map(r => {
+            const count = counts[r.type] || 0;
+            const voted = this.hasPostReacted(r.type);
+            return `<button class="btn-reaction btn-post-reaction btn-reaction-${r.type}${voted ? ' voted' : ''}"
+                            data-reaction="${r.type}"
+                            onclick="commentsWidget.handlePostReaction('${r.type}')"
+                            title="${r.label}">
+                        <span class="reaction-emoji">${r.emoji}</span><span class="reaction-count">${count > 0 ? count : ''}</span>
+                    </button>`;
+        }).join('');
+        return `
+            <div class="post-reactions-section">
+                <span class="post-reactions-label">React to this post:</span>
+                <div class="reactions-bar">${buttonsHtml}</div>
+            </div>
+        `;
+    }
+
     getVotedComments() {
         try {
             const data = JSON.parse(localStorage.getItem('comment_votes') || '{}');
@@ -85,6 +164,9 @@ class CommentSystem {
     render() {
         this.container.innerHTML = `
             <div class="comments-system">
+                <div id="post-reactions-container">
+                    ${this.renderPostReactionsSection()}
+                </div>
                 <h3 class="comments-title">Comments</h3>
                 <div id="comment-form-container">
                     ${this.renderCommentForm()}
@@ -228,6 +310,10 @@ class CommentSystem {
 
             if (response.ok) {
                 this.displayComments(data.comments);
+                const prContainer = document.getElementById('post-reactions-container');
+                if (prContainer && data.post_reactions) {
+                    prContainer.innerHTML = this.renderPostReactionsSection(data.post_reactions);
+                }
             } else {
                 document.getElementById('comments-list').innerHTML =
                     '<p class="error">Failed to load comments</p>';

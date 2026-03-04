@@ -182,6 +182,17 @@ function initDatabase() {
             );
 
             CREATE INDEX IF NOT EXISTS idx_vote_log_ip ON vote_log(ip_address, created_at);
+
+            CREATE TABLE IF NOT EXISTS post_reactions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                page_url TEXT NOT NULL,
+                ip_address TEXT NOT NULL,
+                reaction_type TEXT NOT NULL DEFAULT 'heart',
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(page_url, ip_address, reaction_type)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_post_reactions_page ON post_reactions(page_url);
         ";
     }
 
@@ -336,6 +347,22 @@ function migrateDatabase() {
             ");
             $db->exec("CREATE INDEX IF NOT EXISTS idx_vote_log_ip ON vote_log(ip_address, created_at)");
             error_log('Database migration: vote_log table created');
+        }
+
+        // Create post_reactions table if it doesn't exist
+        if (!tableExists($db, 'post_reactions')) {
+            $db->exec("
+                CREATE TABLE IF NOT EXISTS post_reactions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    page_url TEXT NOT NULL,
+                    ip_address TEXT NOT NULL,
+                    reaction_type TEXT NOT NULL DEFAULT 'heart',
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(page_url, ip_address, reaction_type)
+                )
+            ");
+            $db->exec("CREATE INDEX IF NOT EXISTS idx_post_reactions_page ON post_reactions(page_url)");
+            error_log('Database migration: post_reactions table created');
         }
 
         // Clean up old vote_log entries (5% chance)

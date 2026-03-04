@@ -105,3 +105,37 @@ CREATE TABLE IF NOT EXISTS sessions (
 
 CREATE INDEX IF NOT EXISTS idx_session_token ON sessions(token);
 CREATE INDEX IF NOT EXISTS idx_session_expires ON sessions(expires_at);
+
+-- Votes table for per-comment emoji reactions
+CREATE TABLE IF NOT EXISTS votes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    comment_id INTEGER NOT NULL,
+    ip_address TEXT NOT NULL,
+    reaction_type TEXT NOT NULL DEFAULT 'heart',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (comment_id) REFERENCES comments(id) ON DELETE CASCADE,
+    UNIQUE(comment_id, ip_address, reaction_type)
+);
+
+CREATE INDEX IF NOT EXISTS idx_votes_comment ON votes(comment_id);
+
+-- Vote log for rate limiting
+CREATE TABLE IF NOT EXISTS vote_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ip_address TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_vote_log_ip ON vote_log(ip_address, created_at);
+
+-- Post reactions table for page-level emoji reactions (no comment required)
+CREATE TABLE IF NOT EXISTS post_reactions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    page_url TEXT NOT NULL,
+    ip_address TEXT NOT NULL,
+    reaction_type TEXT NOT NULL DEFAULT 'heart',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(page_url, ip_address, reaction_type)
+);
+
+CREATE INDEX IF NOT EXISTS idx_post_reactions_page ON post_reactions(page_url);

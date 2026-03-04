@@ -465,8 +465,18 @@ if ($method === 'GET' && $action === 'comments') {
         }
     }
 
+    // Fetch post-level reaction counts for this page
+    $allowedReactionTypes = ['heart', 'thumbsup', 'lightbulb', 'funny'];
+    $postReactions = [];
+    foreach ($allowedReactionTypes as $type) {
+        $prStmt = $db->prepare("SELECT COUNT(*) as count FROM post_reactions WHERE page_url = ? AND reaction_type = ?");
+        $prStmt->execute([$pageUrl, $type]);
+        $postReactions[$type] = (int)$prStmt->fetch()['count'];
+    }
+
     jsonResponse([
         'comments' => $threaded,
+        'post_reactions' => $postReactions,
         'pagination' => [
             'total' => $total,
             'limit' => $limit,
@@ -1085,6 +1095,105 @@ if ($method === 'GET' && $action === 'export_disqus') {
     echo '  </channel>' . "\n";
     echo '</rss>' . "\n";
     exit;
+}
+
+// GET /api.php?action=post_reactions_summary (admin)
+// Returns per-page reaction counts across all pages
+if ($method === 'GET' && $action === 'post_reactions_summary') {
+    if (!isAdmin()) {
+        jsonResponse(['error' => 'Unauthorized'], 401);
+    }
+
+    $stmt = $db->query("
+        SELECT page_url,
+               SUM(CASE WHEN reaction_type = 'heart'     THEN 1 ELSE 0 END) AS heart,
+               SUM(CASE WHEN reaction_type = 'thumbsup'  THEN 1 ELSE 0 END) AS thumbsup,
+               SUM(CASE WHEN reaction_type = 'lightbulb' THEN 1 ELSE 0 END) AS lightbulb,
+               SUM(CASE WHEN reaction_type = 'funny'     THEN 1 ELSE 0 END) AS funny,
+               COUNT(*) AS total
+        FROM post_reactions
+        GROUP BY page_url
+        ORDER BY total DESC
+    ");
+    $rows = $stmt->fetchAll();
+
+    $totalCount = array_sum(array_column($rows, 'total'));
+
+    jsonResponse(['pages' => $rows, 'total' => $totalCount]);
+}
+
+// DELETE /api.php?action=delete_post_reactions&url=... (admin)
+// Clears all post reactions for a given page URL
+if ($method === 'DELETE' && $action === 'delete_post_reactions') {
+    if (!isAdmin()) {
+        jsonResponse(['error' => 'Unauthorized'], 401);
+    }
+
+    $csrfToken = $_GET['csrf_token'] ?? '';
+    if (!validateCSRFToken($csrfToken)) {
+        jsonResponse(['error' => 'Invalid CSRF token'], 403);
+    }
+
+    $pageUrl = $_GET['url'] ?? '';
+    if (empty($pageUrl)) {
+        jsonResponse(['error' => 'url is required'], 400);
+    }
+
+    $stmt = $db->prepare("DELETE FROM post_reactions WHERE page_url = ?");
+    $stmt->execute([$pageUrl]);
+
+    jsonResponse(['success' => true, 'message' => 'Post reactions cleared']);
+}
+
+// POST /api.php?action=post_reaction
+// Toggle a reaction on the post itself (one per IP address per reaction type per page)
+if ($method === 'POST' && $action === 'post_reaction') {
+    $input = getInput();
+    $pageUrl = $input['page_url'] ?? '';
+    if (empty($pageUrl)) {
+        jsonResponse(['error' => 'page_url is required'], 400);
+    }
+
+    $allowedTypes = ['heart', 'thumbsup', 'lightbulb', 'funny'];
+    $reactionType = $input['reaction_type'] ?? 'heart';
+    if (!in_array($reactionType, $allowedTypes)) {
+        jsonResponse(['error' => 'Invalid reaction type'], 400);
+    }
+
+    $ip = $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0';
+
+    // Rate limit: reuse vote_log (max 15 vote actions per IP per 60 seconds)
+    $rateStmt = $db->prepare("SELECT COUNT(*) as count FROM vote_log WHERE ip_address = ? AND created_at > datetime('now', '-60 seconds')");
+    $rateStmt->execute([$ip]);
+    if ((int)$rateStmt->fetch()['count'] >= 15) {
+        jsonResponse(['error' => 'Too many reactions. Please slow down.'], 429);
+    }
+
+    // Toggle reaction
+    $existsStmt = $db->prepare("SELECT id FROM post_reactions WHERE page_url = ? AND ip_address = ? AND reaction_type = ?");
+    $existsStmt->execute([$pageUrl, $ip, $reactionType]);
+    $existing = $existsStmt->fetch();
+
+    if ($existing) {
+        $db->prepare("DELETE FROM post_reactions WHERE page_url = ? AND ip_address = ? AND reaction_type = ?")->execute([$pageUrl, $ip, $reactionType]);
+        $voted = false;
+    } else {
+        $db->prepare("INSERT INTO post_reactions (page_url, ip_address, reaction_type) VALUES (?, ?, ?)")->execute([$pageUrl, $ip, $reactionType]);
+        $voted = true;
+    }
+
+    // Log for rate limiting
+    $db->prepare("INSERT INTO vote_log (ip_address) VALUES (?)")->execute([$ip]);
+
+    // Return per-type counts
+    $counts = [];
+    foreach ($allowedTypes as $type) {
+        $countStmt = $db->prepare("SELECT COUNT(*) as count FROM post_reactions WHERE page_url = ? AND reaction_type = ?");
+        $countStmt->execute([$pageUrl, $type]);
+        $counts[$type] = (int)$countStmt->fetch()['count'];
+    }
+
+    jsonResponse(['voted' => $voted, 'reaction_type' => $reactionType, 'counts' => $counts]);
 }
 
 jsonResponse(['error' => 'Invalid action'], 400);
