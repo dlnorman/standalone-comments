@@ -47,18 +47,25 @@ if (!$db) {
     exit(1);
 }
 
-// Parse XML namespaces
+// Parse XML namespaces; dsq:id is an attribute in the disqus-internals namespace
 $namespaces = $xml->getNamespaces(true);
-$dsq = $namespaces['dsq'] ?? 'http://disqus.com';
+$dsq = $namespaces['dsq'] ?? 'http://disqus.com/disqus-internals';
 
 // Extract threads (posts/pages)
 echo "\nExtracting threads...\n";
 $threads = [];
 foreach ($xml->thread as $thread) {
-    $dsqId = (string)$thread->children($dsq)->id;
-    $link = (string)$thread->link;
-    $threads[$dsqId] = $link;
-    echo "  Thread: $link\n";
+    $dsqId = (string)$thread->attributes($dsq)->id;
+    $link  = (string)$thread->link;
+    if ($dsqId && $link) {
+        // Normalize to path-only to match what the widget sends (window.location.pathname)
+        $parsed = parse_url($link);
+        $path   = $parsed['path'] ?? $link;
+        if (isset($parsed['query'])) $path .= '?' . $parsed['query'];
+        if (isset($parsed['fragment'])) $path .= '#' . $parsed['fragment'];
+        $threads[$dsqId] = $path;
+        echo "  Thread: $path\n";
+    }
 }
 
 // Extract posts (comments)
@@ -67,9 +74,9 @@ $posts = [];
 $postIdMap = []; // Maps Disqus IDs to our IDs
 
 foreach ($xml->post as $post) {
-    $dsqId = (string)$post->children($dsq)->id;
-    $threadId = (string)$post->thread['dsq:id'];
-    $parentId = (string)$post->parent['dsq:id'];
+    $dsqId = (string)$post->attributes($dsq)->id;
+    $threadId = (string)$post->thread->attributes($dsq)->id;
+    $parentId = (string)$post->parent->attributes($dsq)->id;
 
     $author = $post->author;
     $authorName = (string)$author->name;

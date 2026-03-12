@@ -484,9 +484,17 @@
             <div class="comments-section">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; flex-wrap: wrap; gap: 1rem;">
                     <h2 style="margin: 0;">All Comments</h2>
-                    <button class="btn btn-primary" onclick="exportToDisqus()">
-                        <span style="margin-right: 0.5rem;">📥</span>Export to Disqus
-                    </button>
+                    <div style="display: flex; gap: 0.5rem;">
+                        <button class="btn btn-secondary" onclick="openImportModal()">
+                            <span style="margin-right: 0.5rem;">📤</span>Import from Disqus
+                        </button>
+                        <button class="btn btn-secondary" onclick="normalizeUrls()" id="normalize-urls-btn" title="Strip scheme+host from page URLs stored as full URLs (e.g. after a Disqus import)">
+                            Fix Page URLs
+                        </button>
+                        <button class="btn btn-primary" onclick="exportToDisqus()">
+                            <span style="margin-right: 0.5rem;">📥</span>Export to Disqus
+                        </button>
+                    </div>
                 </div>
                 <div id="all-comments">
                     <p class="no-comments">Loading...</p>
@@ -890,9 +898,165 @@
             document.querySelector('.comments-section').scrollIntoView({ behavior: 'smooth' });
         }
 
+        async function normalizeUrls() {
+            const btn = document.getElementById('normalize-urls-btn');
+            if (!confirm('This will strip the scheme and hostname from any page URLs stored as full URLs (e.g. imported from Disqus). Continue?')) return;
+            btn.disabled = true;
+            btn.textContent = 'Fixing…';
+            try {
+                const token = await ensureCSRFToken();
+                const res = await fetch(`${API_URL}?action=normalize_urls`, {
+                    method: 'POST',
+                    credentials: 'include',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ csrf_token: token }),
+                });
+                const data = await res.json();
+                if (data.success) {
+                    alert(`Done. ${data.comments_updated} comment${data.comments_updated !== 1 ? 's' : ''} updated.`);
+                    loadAllComments();
+                } else {
+                    alert('Error: ' + (data.error || 'Unknown error'));
+                }
+            } catch (err) {
+                alert('Network error: ' + err.message);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Fix Page URLs';
+            }
+        }
+
         function exportToDisqus() {
             // Open export in new window to download file
             window.open(`${API_URL}?action=export_disqus`, '_blank');
+        }
+
+        function openImportModal() {
+            document.getElementById('import-modal').style.display = 'flex';
+            showImportStep(1);
+        }
+
+        function closeImportModal() {
+            document.getElementById('import-modal').style.display = 'none';
+            document.getElementById('import-file').value = '';
+            document.getElementById('import-verify-error').textContent = '';
+        }
+
+        function showImportStep(n) {
+            document.getElementById('import-step-1').style.display = n === 1 ? '' : 'none';
+            document.getElementById('import-step-2').style.display = n === 2 ? '' : 'none';
+            document.getElementById('import-step-3').style.display = n === 3 ? '' : 'none';
+        }
+
+        function readFileAsText(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = e => resolve(e.target.result);
+                reader.onerror = () => reject(new Error('Could not read file'));
+                reader.readAsText(file);
+            });
+        }
+
+        async function verifyImport() {
+            const fileInput = document.getElementById('import-file');
+            const errEl = document.getElementById('import-verify-error');
+            if (!fileInput.files.length) {
+                errEl.textContent = 'Please select a file.';
+                return;
+            }
+            errEl.textContent = '';
+            document.getElementById('import-verify-btn').disabled = true;
+            document.getElementById('import-verify-btn').textContent = 'Verifying…';
+
+            try {
+                const content = await readFileAsText(fileInput.files[0]);
+                const token = await ensureCSRFToken();
+
+                const res = await fetch(`${API_URL}?action=import_disqus`, {
+                    method: 'POST',
+                    credentials: 'include',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ csrf_token: token, content, preview: true }),
+                });
+                const data = await res.json();
+                if (data.error) { errEl.textContent = data.error; return; }
+
+                // Populate preview panel
+                const fmt = n => n.toLocaleString();
+                const p = (id, val) => { document.getElementById(id).textContent = val; };
+                p('imp-threads',  fmt(data.threads));
+                p('imp-total',    fmt(data.posts_total));
+                p('imp-import',   fmt(data.posts_import));
+                p('imp-skip',     fmt(data.posts_skip));
+                p('imp-dups',     fmt(data.duplicates));
+
+                if (data.date_range) {
+                    const fmtDate = s => new Date(s).toLocaleDateString(undefined, {year:'numeric',month:'short',day:'numeric'});
+                    p('imp-dates', fmtDate(data.date_range.oldest) + ' – ' + fmtDate(data.date_range.newest));
+                } else {
+                    p('imp-dates', '—');
+                }
+
+                const threadList = document.getElementById('imp-thread-list');
+                threadList.innerHTML = data.top_threads.length
+                    ? data.top_threads.map(t =>
+                        `<li style="display:flex;justify-content:space-between;gap:1rem;padding:0.2rem 0;font-size:0.8rem;">
+                            <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(t.url)}</span>
+                            <span style="flex-shrink:0;color:var(--color-text-muted,#666);">${fmt(t.count)} comment${t.count !== 1 ? 's' : ''}</span>
+                        </li>`).join('')
+                    : '<li style="color:var(--color-text-muted,#666);font-size:0.85rem;">No importable comments found.</li>';
+
+                const warnEl = document.getElementById('imp-warnings');
+                warnEl.innerHTML = data.warnings.length
+                    ? data.warnings.map(w => `<li>${escapeHtml(w)}</li>`).join('')
+                    : '';
+                warnEl.parentElement.style.display = data.warnings.length ? '' : 'none';
+
+                document.getElementById('import-confirm-btn').disabled = data.posts_import === 0;
+
+                showImportStep(2);
+            } catch (err) {
+                errEl.textContent = 'Network error: ' + err.message;
+            } finally {
+                document.getElementById('import-verify-btn').disabled = false;
+                document.getElementById('import-verify-btn').textContent = 'Verify File';
+            }
+        }
+
+        async function submitImport() {
+            const fileInput = document.getElementById('import-file');
+            document.getElementById('import-confirm-btn').disabled = true;
+            document.getElementById('import-confirm-btn').textContent = 'Importing…';
+
+            try {
+                const content = await readFileAsText(fileInput.files[0]);
+                const token = await ensureCSRFToken();
+
+                const res = await fetch(`${API_URL}?action=import_disqus`, {
+                    method: 'POST',
+                    credentials: 'include',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ csrf_token: token, content }),
+                });
+                const data = await res.json();
+
+                const resultEl = document.getElementById('import-result');
+                if (data.success) {
+                    let msg = `Imported ${data.imported.toLocaleString()} comment${data.imported !== 1 ? 's' : ''} across ${data.unique_pages.toLocaleString()} page${data.unique_pages !== 1 ? 's' : ''}.`;
+                    if (data.skipped_duplicates > 0) msg += ` Skipped ${data.skipped_duplicates.toLocaleString()} duplicate${data.skipped_duplicates !== 1 ? 's' : ''}.`;
+                    resultEl.textContent = msg;
+                    resultEl.style.color = 'var(--color-success, #28a745)';
+                    loadAllComments();
+                } else {
+                    resultEl.textContent = data.error || 'Import failed.';
+                    resultEl.style.color = 'var(--color-danger, #dc3545)';
+                }
+                showImportStep(3);
+            } catch (err) {
+                document.getElementById('import-result').textContent = 'Network error: ' + err.message;
+                document.getElementById('import-result').style.color = 'var(--color-danger, #dc3545)';
+                showImportStep(3);
+            }
         }
 
         function escapeHtml(text) {
@@ -901,5 +1065,60 @@
             return div.innerHTML;
         }
     </script>
+
+    <!-- Disqus Import Modal -->
+    <div id="import-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:1000; align-items:center; justify-content:center;">
+        <div style="background:var(--color-surface, #fff); border-radius:8px; padding:2rem; max-width:500px; width:90%; box-shadow:0 4px 24px rgba(0,0,0,0.2);">
+            <h3 style="margin:0 0 1.25rem;">Import from Disqus</h3>
+
+            <!-- Step 1: file picker -->
+            <div id="import-step-1">
+                <p style="margin:0 0 1.25rem; color:var(--color-text-muted, #666); font-size:0.9rem;">
+                    Select a Disqus XML export file. The file will be verified before any data is written.
+                </p>
+                <input type="file" id="import-file" accept=".xml" style="display:block; margin-bottom:0.5rem; width:100%; box-sizing:border-box;">
+                <p id="import-verify-error" style="margin:0 0 1rem; font-size:0.85rem; color:var(--color-danger,#dc3545); min-height:1.2em;"></p>
+                <div style="display:flex; gap:0.5rem; justify-content:flex-end;">
+                    <button class="btn btn-secondary" onclick="closeImportModal()">Cancel</button>
+                    <button id="import-verify-btn" class="btn btn-primary" onclick="verifyImport()">Verify File</button>
+                </div>
+            </div>
+
+            <!-- Step 2: preview stats -->
+            <div id="import-step-2" style="display:none;">
+                <table style="width:100%; border-collapse:collapse; margin-bottom:1rem; font-size:0.9rem;">
+                    <tbody>
+                        <tr><td style="padding:0.3rem 0; color:var(--color-text-muted,#666);">Threads (pages)</td><td style="padding:0.3rem 0; text-align:right; font-weight:600;" id="imp-threads"></td></tr>
+                        <tr><td style="padding:0.3rem 0; color:var(--color-text-muted,#666);">Total posts in file</td><td style="padding:0.3rem 0; text-align:right; font-weight:600;" id="imp-total"></td></tr>
+                        <tr><td style="padding:0.3rem 0; color:var(--color-text-muted,#666);">Will be imported</td><td style="padding:0.3rem 0; text-align:right; font-weight:600;" id="imp-import"></td></tr>
+                        <tr><td style="padding:0.3rem 0; color:var(--color-text-muted,#666);">Spam / deleted (skipped)</td><td style="padding:0.3rem 0; text-align:right;" id="imp-skip"></td></tr>
+                        <tr><td style="padding:0.3rem 0; color:var(--color-text-muted,#666);">Already in database (skipped)</td><td style="padding:0.3rem 0; text-align:right;" id="imp-dups"></td></tr>
+                        <tr><td style="padding:0.3rem 0; color:var(--color-text-muted,#666);">Date range</td><td style="padding:0.3rem 0; text-align:right; font-size:0.85rem;" id="imp-dates"></td></tr>
+                    </tbody>
+                </table>
+                <div style="margin-bottom:1rem;">
+                    <p style="margin:0 0 0.4rem; font-size:0.85rem; font-weight:600;">Top pages by comment count</p>
+                    <ul id="imp-thread-list" style="margin:0; padding:0 0 0 0; list-style:none;"></ul>
+                </div>
+                <div id="imp-warnings-box" style="margin-bottom:1rem; padding:0.6rem 0.75rem; background:var(--color-warning-bg,#fff3cd); border-radius:4px; font-size:0.85rem;">
+                    <strong>Warnings:</strong>
+                    <ul id="imp-warnings" style="margin:0.25rem 0 0; padding-left:1.25rem;"></ul>
+                </div>
+                <div style="display:flex; gap:0.5rem; justify-content:flex-end;">
+                    <button class="btn btn-secondary" onclick="showImportStep(1)">Back</button>
+                    <button class="btn btn-secondary" onclick="closeImportModal()">Cancel</button>
+                    <button id="import-confirm-btn" class="btn btn-primary" onclick="submitImport()">Import</button>
+                </div>
+            </div>
+
+            <!-- Step 3: result -->
+            <div id="import-step-3" style="display:none;">
+                <p id="import-result" style="margin:0 0 1.5rem; font-size:0.95rem;"></p>
+                <div style="display:flex; justify-content:flex-end;">
+                    <button class="btn btn-secondary" onclick="closeImportModal()">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
 </body>
 </html>

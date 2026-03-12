@@ -1108,79 +1108,103 @@ if ($method === 'GET' && $action === 'export_disqus') {
         jsonResponse(['error' => 'Unauthorized'], 401);
     }
 
-    // Fetch all comments
+    // Fetch all approved/pending comments (skip spam/deleted)
     $stmt = $db->query("
         SELECT id, page_url, parent_id, author_name, author_email, author_url,
                content, created_at, status, ip_address
         FROM comments
+        WHERE status != 'spam'
         ORDER BY created_at ASC
     ");
     $comments = $stmt->fetchAll();
 
-    // Generate Disqus WXR format
     header('Content-Type: application/xml; charset=utf-8');
     header('Content-Disposition: attachment; filename="disqus_export_' . date('Y-m-d') . '.xml"');
     header('Cache-Control: no-cache');
 
-    echo '<?xml version="1.0" encoding="UTF-8"?>' . "\n";
-    echo '<rss version="2.0"' . "\n";
-    echo '     xmlns:content="http://purl.org/rss/1.0/modules/content/"' . "\n";
-    echo '     xmlns:dsq="http://www.disqus.com/"' . "\n";
-    echo '     xmlns:dc="http://purl.org/dc/elements/1.1/"' . "\n";
-    echo '     xmlns:wp="http://wordpress.org/export/1.0/">' . "\n";
-    echo '  <channel>' . "\n";
-    echo '    <title>' . htmlspecialchars($_SERVER['HTTP_HOST']) . '</title>' . "\n";
-    echo '    <link>https://' . htmlspecialchars($_SERVER['HTTP_HOST']) . '</link>' . "\n";
-    echo '    <description>Comment export from standalone-comments</description>' . "\n";
-    echo '    <pubDate>' . date('r') . '</pubDate>' . "\n\n";
+    // Base URL for constructing full URLs from relative paths
+    $scheme  = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+    $baseUrl = $scheme . '://' . $_SERVER['HTTP_HOST'];
+    $forum   = preg_replace('/^www\./', '', $_SERVER['HTTP_HOST']);
 
-    // Group comments by page
-    $pageGroups = [];
+    // Build thread map: page_url -> sequential thread dsq:id
+    $threadMap = [];
+    $threadId  = 1;
     foreach ($comments as $comment) {
-        $pageGroups[$comment['page_url']][] = $comment;
-    }
-
-    // Output each page as an item
-    foreach ($pageGroups as $pageUrl => $pageComments) {
-        // Use page URL as identifier
-        $pageId = md5($pageUrl);
-
-        echo '    <item>' . "\n";
-        echo '      <title>' . htmlspecialchars($pageUrl) . '</title>' . "\n";
-        echo '      <link>' . htmlspecialchars($pageUrl) . '</link>' . "\n";
-        echo '      <content:encoded><![CDATA[]]></content:encoded>' . "\n";
-        echo '      <dsq:thread_identifier>' . htmlspecialchars($pageId) . '</dsq:thread_identifier>' . "\n";
-        echo '      <wp:post_date_gmt>' . date('Y-m-d H:i:s') . '</wp:post_date_gmt>' . "\n";
-        echo '      <wp:comment_status>open</wp:comment_status>' . "\n";
-
-        // Output comments for this page
-        foreach ($pageComments as $comment) {
-            echo '      <wp:comment>' . "\n";
-            echo '        <wp:comment_id>' . $comment['id'] . '</wp:comment_id>' . "\n";
-            echo '        <wp:comment_author>' . htmlspecialchars($comment['author_name']) . '</wp:comment_author>' . "\n";
-            echo '        <wp:comment_author_email>' . htmlspecialchars($comment['author_email']) . '</wp:comment_author_email>' . "\n";
-            if ($comment['author_url']) {
-                echo '        <wp:comment_author_url>' . htmlspecialchars($comment['author_url']) . '</wp:comment_author_url>' . "\n";
-            }
-            echo '        <wp:comment_author_IP>' . htmlspecialchars($comment['ip_address'] ?? '') . '</wp:comment_author_IP>' . "\n";
-            echo '        <wp:comment_date_gmt>' . date('Y-m-d H:i:s', strtotime($comment['created_at'])) . '</wp:comment_date_gmt>' . "\n";
-            echo '        <wp:comment_content><![CDATA[' . $comment['content'] . ']]></wp:comment_content>' . "\n";
-
-            // Map status
-            $approved = ($comment['status'] === 'approved') ? '1' : '0';
-            echo '        <wp:comment_approved>' . $approved . '</wp:comment_approved>' . "\n";
-
-            if ($comment['parent_id']) {
-                echo '        <wp:comment_parent>' . $comment['parent_id'] . '</wp:comment_parent>' . "\n";
-            }
-            echo '      </wp:comment>' . "\n";
+        if (!isset($threadMap[$comment['page_url']])) {
+            $threadMap[$comment['page_url']] = $threadId++;
         }
-
-        echo '    </item>' . "\n\n";
     }
 
-    echo '  </channel>' . "\n";
-    echo '</rss>' . "\n";
+    $e = fn($s) => htmlspecialchars((string)$s, ENT_XML1, 'UTF-8');
+    $fullUrl = function ($pageUrl) use ($baseUrl) {
+        return (strpos($pageUrl, 'http') === 0) ? $pageUrl : $baseUrl . $pageUrl;
+    };
+    $isoDate = fn($ts) => gmdate('Y-m-d\TH:i:s\Z', strtotime($ts));
+
+    echo '<?xml version="1.0" encoding="UTF-8"?>' . "\n";
+    echo '<disqus' . "\n";
+    echo '  xmlns="http://disqus.com"' . "\n";
+    echo '  xmlns:dsq="http://disqus.com/disqus-internals"' . "\n";
+    echo '  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"' . "\n";
+    echo '  xsi:schemaLocation="http://disqus.com http://disqus.com/api/schemas/1.0/disqus.xsd">' . "\n\n";
+
+    // Single default category
+    echo '  <category dsq:id="1">' . "\n";
+    echo '    <forum>' . $e($forum) . '</forum>' . "\n";
+    echo '    <title>General</title>' . "\n";
+    echo '    <isDefault>true</isDefault>' . "\n";
+    echo '  </category>' . "\n\n";
+
+    // One thread per unique page
+    foreach ($threadMap as $pageUrl => $tid) {
+        $url = $fullUrl($pageUrl);
+        echo '  <thread dsq:id="' . $tid . '">' . "\n";
+        echo '    <id>' . $e($url) . '</id>' . "\n";
+        echo '    <forum>' . $e($forum) . '</forum>' . "\n";
+        echo '    <category dsq:id="1"/>' . "\n";
+        echo '    <link>' . $e($url) . '</link>' . "\n";
+        echo '    <title>' . $e($url) . '</title>' . "\n";
+        echo '    <createdAt>' . gmdate('Y-m-d\TH:i:s\Z') . '</createdAt>' . "\n";
+        echo '    <isClosed>false</isClosed>' . "\n";
+        echo '    <isDeleted>false</isDeleted>' . "\n";
+        echo '  </thread>' . "\n\n";
+    }
+
+    // One post per comment
+    foreach ($comments as $comment) {
+        $tid      = $threadMap[$comment['page_url']];
+        $isSpam   = $comment['status'] === 'spam'    ? 'true' : 'false';
+        $approved = $comment['status'] === 'approved' ? 'true' : 'false';
+
+        echo '  <post dsq:id="' . $comment['id'] . '">' . "\n";
+        echo '    <thread dsq:id="' . $tid . '"/>' . "\n";
+        if ($comment['parent_id']) {
+            echo '    <parent dsq:id="' . $comment['parent_id'] . '"/>' . "\n";
+        }
+        echo '    <author>' . "\n";
+        echo '      <name>' . $e($comment['author_name']) . '</name>' . "\n";
+        if ($comment['author_email']) {
+            echo '      <email>' . $e($comment['author_email']) . '</email>' . "\n";
+        }
+        if ($comment['author_url']) {
+            echo '      <link>' . $e($comment['author_url']) . '</link>' . "\n";
+        }
+        echo '      <isAnonymous>false</isAnonymous>' . "\n";
+        echo '    </author>' . "\n";
+        echo '    <message><![CDATA[' . $comment['content'] . ']]></message>' . "\n";
+        if ($comment['ip_address']) {
+            echo '    <ipAddress>' . $e($comment['ip_address']) . '</ipAddress>' . "\n";
+        }
+        echo '    <createdAt>' . $isoDate($comment['created_at']) . '</createdAt>' . "\n";
+        echo '    <isDeleted>false</isDeleted>' . "\n";
+        echo '    <isApproved>' . $approved . '</isApproved>' . "\n";
+        echo '    <isFlagged>false</isFlagged>' . "\n";
+        echo '    <isSpam>' . $isSpam . '</isSpam>' . "\n";
+        echo '  </post>' . "\n\n";
+    }
+
+    echo '</disqus>' . "\n";
     exit;
 }
 
@@ -1286,6 +1310,238 @@ if ($method === 'POST' && $action === 'post_reaction') {
     }
 
     jsonResponse(['voted' => $voted, 'reaction_type' => $reactionType, 'counts' => $counts]);
+}
+
+// POST /api.php?action=import_disqus (admin, multipart file upload)
+if ($method === 'POST' && $action === 'import_disqus') {
+    if (!isAdmin()) {
+        jsonResponse(['error' => 'Unauthorized'], 401);
+    }
+
+    $input = getInput();
+
+    $csrfToken = $input['csrf_token'] ?? '';
+    if (!validateCSRFToken($csrfToken)) {
+        jsonResponse(['error' => 'Invalid CSRF token'], 403);
+    }
+
+    $xmlContent = $input['content'] ?? '';
+    if (empty($xmlContent)) {
+        jsonResponse(['error' => 'No file content received'], 400);
+    }
+
+    libxml_use_internal_errors(true);
+    $xml = simplexml_load_string($xmlContent);
+
+    if ($xml === false) {
+        $errs = array_map(fn($e) => trim($e->message), libxml_get_errors());
+        jsonResponse(['error' => 'Invalid XML: ' . implode('; ', $errs)], 400);
+    }
+
+    $namespaces = $xml->getNamespaces(true);
+    $dsqNs = $namespaces['dsq'] ?? 'http://disqus.com/disqus-internals';
+
+    // Collect threads (page URLs); dsq:id is an attribute, <link> is a child element.
+    // Normalize to path-only so imported URLs match what the widget sends (window.location.pathname).
+    $threads = [];
+    foreach ($xml->thread as $thread) {
+        $dsqId = (string)$thread->attributes($dsqNs)->id;
+        $link  = (string)$thread->link;
+        if ($dsqId && $link) {
+            $parsed = parse_url($link);
+            $path   = $parsed['path'] ?? $link;
+            if (isset($parsed['query'])) $path .= '?' . $parsed['query'];
+            if (isset($parsed['fragment'])) $path .= '#' . $parsed['fragment'];
+            $threads[$dsqId] = $path;
+        }
+    }
+
+    // Collect posts
+    $posts = [];
+    foreach ($xml->post as $post) {
+        $dsqId    = (string)$post->attributes($dsqNs)->id;
+        $threadEl = $post->thread;
+        $threadId = (string)$threadEl->attributes($dsqNs)->id;
+        $parentEl = $post->parent;
+        $parentId = $parentEl ? (string)$parentEl->attributes($dsqNs)->id : null;
+
+        $isDeleted = ((string)$post->isDeleted) === 'true';
+        $isSpam    = ((string)$post->isSpam)    === 'true';
+        if ($isDeleted || $isSpam) continue;
+
+        $pageUrl = $threads[$threadId] ?? null;
+        if (!$pageUrl) continue;
+
+        $authorName  = (string)$post->author->name  ?: 'Anonymous';
+        $authorEmail = (string)$post->author->email ?: '';
+        $authorUrl   = (string)$post->author->link  ?: null;
+        $message     = strip_tags((string)$post->message);
+        $message     = html_entity_decode($message, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        $createdAt   = date('Y-m-d H:i:s', strtotime((string)$post->createdAt));
+
+        $posts[] = [
+            'dsq_id'        => $dsqId,
+            'dsq_parent_id' => $parentId ?: null,
+            'page_url'      => $pageUrl,
+            'author_name'   => $authorName,
+            'author_email'  => $authorEmail,
+            'author_url'    => $authorUrl,
+            'content'       => $message,
+            'created_at'    => $createdAt,
+        ];
+    }
+
+    // Count raw totals before filtering
+    $rawTotal   = 0;
+    $skipped    = 0;
+    $orphaned   = 0;
+    $rawPosts   = [];
+    foreach ($xml->post as $post) {
+        $rawTotal++;
+        $isDeleted = ((string)$post->isDeleted) === 'true';
+        $isSpam    = ((string)$post->isSpam)    === 'true';
+        $dsqId     = (string)$post->attributes($dsqNs)->id;
+        $threadId  = (string)$post->thread->attributes($dsqNs)->id;
+        $pageUrl   = $threads[$threadId] ?? null;
+        if ($isDeleted || $isSpam) { $skipped++; continue; }
+        if (!$pageUrl)             { $orphaned++; continue; }
+        $rawPosts[] = [
+            'dsq_id'        => $dsqId,
+            'dsq_parent_id' => (string)$post->parent->attributes($dsqNs)->id ?: null,
+            'page_url'      => $pageUrl,
+            'author_name'   => (string)$post->author->name  ?: 'Anonymous',
+            'author_email'  => (string)$post->author->email ?: '',
+            'author_url'    => (string)$post->author->link  ?: null,
+            'content'       => html_entity_decode(strip_tags((string)$post->message), ENT_QUOTES | ENT_HTML5, 'UTF-8'),
+            'created_at'    => date('Y-m-d H:i:s', strtotime((string)$post->createdAt)),
+        ];
+    }
+
+    // Build a dedup set from existing comments: "created_at|page_url|author_name"
+    $existingKeys = [];
+    $existingRows = $db->query("SELECT created_at, page_url, author_name FROM comments")->fetchAll();
+    foreach ($existingRows as $row) {
+        $existingKeys[$row['created_at'] . '|' . $row['page_url'] . '|' . $row['author_name']] = true;
+    }
+
+    $dupCount  = 0;
+    $newPosts  = [];
+    foreach ($rawPosts as $post) {
+        $key = $post['created_at'] . '|' . $post['page_url'] . '|' . $post['author_name'];
+        if (isset($existingKeys[$key])) {
+            $dupCount++;
+        } else {
+            $newPosts[] = $post;
+        }
+    }
+
+    // Preview mode: return stats without inserting anything
+    if (!empty($input['preview'])) {
+        $pageCounts = array_count_values(array_column($newPosts, 'page_url'));
+        arsort($pageCounts);
+        $topThreads = [];
+        foreach (array_slice($pageCounts, 0, 5, true) as $url => $count) {
+            $topThreads[] = ['url' => $url, 'count' => $count];
+        }
+
+        $dates     = array_column($rawPosts, 'created_at');
+        $dateRange = $dates ? ['oldest' => min($dates), 'newest' => max($dates)] : null;
+
+        $warnings = [];
+        if (count($threads) === 0) $warnings[] = 'No threads found in file.';
+        if ($rawTotal === 0)       $warnings[] = 'No posts found in file.';
+        if ($orphaned > 0)         $warnings[] = "$orphaned post(s) reference unknown threads and will be skipped.";
+        if ($dupCount > 0)         $warnings[] = "$dupCount duplicate(s) already in database — will be skipped.";
+
+        jsonResponse([
+            'preview'      => true,
+            'threads'      => count($threads),
+            'posts_total'  => $rawTotal,
+            'posts_import' => count($newPosts),
+            'posts_skip'   => $skipped,
+            'duplicates'   => $dupCount,
+            'orphaned'     => $orphaned,
+            'date_range'   => $dateRange,
+            'top_threads'  => $topThreads,
+            'warnings'     => $warnings,
+        ]);
+    }
+
+    // Sort oldest-first so parent IDs exist before children
+    usort($newPosts, fn($a, $b) => strtotime($a['created_at']) - strtotime($b['created_at']));
+
+    $postIdMap = [];
+    $imported  = 0;
+
+    $db->beginTransaction();
+    try {
+        $stmt = $db->prepare("
+            INSERT INTO comments (page_url, parent_id, author_name, author_email, author_url,
+                                  content, created_at, status)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 'approved')
+        ");
+
+        foreach ($newPosts as $post) {
+            $parentId = $post['dsq_parent_id'] ? ($postIdMap[$post['dsq_parent_id']] ?? null) : null;
+
+            $stmt->execute([
+                $post['page_url'],
+                $parentId,
+                $post['author_name'],
+                $post['author_email'],
+                $post['author_url'],
+                $post['content'],
+                $post['created_at'],
+            ]);
+
+            $postIdMap[$post['dsq_id']] = $db->lastInsertId();
+            $imported++;
+        }
+
+        $db->commit();
+    } catch (PDOException $e) {
+        $db->rollBack();
+        jsonResponse(['error' => 'Database error: ' . $e->getMessage()], 500);
+    }
+
+    $uniquePages = count(array_unique(array_column($newPosts, 'page_url')));
+    jsonResponse([
+        'success'           => true,
+        'imported'          => $imported,
+        'unique_pages'      => $uniquePages,
+        'skipped_duplicates'=> $dupCount,
+    ]);
+}
+
+// POST /api.php?action=normalize_urls (admin) — one-time fix: strip scheme+host from full URLs
+if ($method === 'POST' && $action === 'normalize_urls') {
+    if (!isAdmin()) {
+        jsonResponse(['error' => 'Unauthorized'], 401);
+    }
+
+    $input = getInput();
+    $csrfToken = $input['csrf_token'] ?? '';
+    if (!validateCSRFToken($csrfToken)) {
+        jsonResponse(['error' => 'Invalid CSRF token'], 403);
+    }
+
+    $stmt = $db->query("SELECT DISTINCT page_url FROM comments WHERE page_url LIKE 'http%'");
+    $fullUrls = $stmt->fetchAll(PDO::FETCH_COLUMN);
+
+    $fixed = 0;
+    $update = $db->prepare("UPDATE comments SET page_url = ? WHERE page_url = ?");
+    foreach ($fullUrls as $url) {
+        $parsed = parse_url($url);
+        $path   = $parsed['path'] ?? $url;
+        if (isset($parsed['query']))    $path .= '?' . $parsed['query'];
+        if (isset($parsed['fragment'])) $path .= '#' . $parsed['fragment'];
+        if ($path !== $url) {
+            $update->execute([$path, $url]);
+            $fixed += $update->rowCount();
+        }
+    }
+
+    jsonResponse(['success' => true, 'comments_updated' => $fixed]);
 }
 
 jsonResponse(['error' => 'Invalid action'], 400);
