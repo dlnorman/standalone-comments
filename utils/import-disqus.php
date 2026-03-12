@@ -2,10 +2,11 @@
 /**
  * Disqus Comment Import Script
  *
- * Usage: php import-disqus.php path/to/disqus-export.xml
+ * Usage: php import-disqus.php path/to/export.xml
  *
- * Disqus export format is XML. You can export from:
- * https://[your-site].disqus.com/admin/discussions/export/
+ * Supports two formats (auto-detected by root element):
+ *   - Native Disqus XML: export from https://[your-site].disqus.com/admin/discussions/export/
+ *   - WordPress WXR format: RSS-based export with <wp:comment> elements (used by some migration tools)
  */
 
 require_once 'config.php';
@@ -27,7 +28,7 @@ if (!file_exists($xmlFile)) {
     exit(1);
 }
 
-echo "Loading Disqus XML export...\n";
+echo "Loading XML export...\n";
 
 // Load XML
 libxml_use_internal_errors(true);
@@ -47,79 +48,143 @@ if (!$db) {
     exit(1);
 }
 
-// Parse XML namespaces; dsq:id is an attribute in the disqus-internals namespace
-$namespaces = $xml->getNamespaces(true);
-$dsq = $namespaces['dsq'] ?? 'http://disqus.com/disqus-internals';
-
-// Extract threads (posts/pages)
-echo "\nExtracting threads...\n";
-$threads = [];
-foreach ($xml->thread as $thread) {
-    $dsqId = (string)$thread->attributes($dsq)->id;
-    $link  = (string)$thread->link;
-    if ($dsqId && $link) {
-        // Normalize to path-only to match what the widget sends (window.location.pathname)
-        $parsed = parse_url($link);
-        $path   = $parsed['path'] ?? $link;
-        if (isset($parsed['query'])) $path .= '?' . $parsed['query'];
-        if (isset($parsed['fragment'])) $path .= '#' . $parsed['fragment'];
-        $threads[$dsqId] = $path;
-        echo "  Thread: $path\n";
-    }
-}
-
-// Extract posts (comments)
-echo "\nExtracting comments...\n";
 $posts = [];
-$postIdMap = []; // Maps Disqus IDs to our IDs
+$postIdMap = []; // Maps source IDs to our IDs (populated during import)
 
-foreach ($xml->post as $post) {
-    $dsqId = (string)$post->attributes($dsq)->id;
-    $threadId = (string)$post->thread->attributes($dsq)->id;
-    $parentId = (string)$post->parent->attributes($dsq)->id;
+$rootName = $xml->getName();
 
-    $author = $post->author;
-    $authorName = (string)$author->name;
-    $authorEmail = (string)$author->email;
-    $authorUrl = (string)$author->link;
+if ($rootName === 'rss') {
+    // WordPress WXR format (also used by some Disqus-export tools)
+    echo "Detected WordPress WXR format\n";
 
-    $createdAt = (string)$post->createdAt;
-    $message = (string)$post->message;
-    $isDeleted = ((string)$post->isDeleted) === 'true';
-    $isSpam = ((string)$post->isSpam) === 'true';
+    $wpNs = 'http://wordpress.org/export/1.0/';
 
-    // Skip deleted or spam comments if desired
-    if ($isDeleted || $isSpam) {
-        echo "  Skipping deleted/spam comment: $dsqId\n";
-        continue;
+    echo "\nExtracting comments...\n";
+
+    // WXR has one <item> per page, with <wp:comment> children
+    foreach ($xml->channel->item as $item) {
+        $link = (string)$item->link;
+        if (empty($link)) continue;
+
+        // Normalize to path-only
+        $parsed = parse_url($link);
+        $pageUrl = $parsed['path'] ?? $link;
+        if (isset($parsed['query'])) $pageUrl .= '?' . $parsed['query'];
+        if (isset($parsed['fragment'])) $pageUrl .= '#' . $parsed['fragment'];
+
+        $wpChildren = $item->children($wpNs);
+        if (!isset($wpChildren->comment)) continue;
+
+        foreach ($wpChildren->comment as $comment) {
+            $wp = $comment->children($wpNs);
+
+            $wpId       = (string)$wp->comment_id;
+            $approved   = (string)$wp->comment_approved;
+            $parentWpId = (string)$wp->comment_parent;
+
+            // Skip unapproved/spam
+            if ($approved !== '1') {
+                echo "  Skipping unapproved comment: $wpId\n";
+                continue;
+            }
+
+            $authorName  = (string)$wp->comment_author;
+            $authorEmail = (string)$wp->comment_author_email;
+            $authorUrl   = (string)$wp->comment_author_url;
+            $createdAt   = (string)$wp->comment_date_gmt;
+            $message     = (string)$wp->comment_content;
+
+            // Clean up message
+            $message = strip_tags($message);
+            $message = html_entity_decode($message, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+
+            if (empty($authorName))  $authorName  = 'Anonymous';
+            if (empty($authorEmail)) $authorEmail = 'anonymous@example.com';
+
+            $posts[] = [
+                'source_id'        => $wpId,
+                'source_parent_id' => ($parentWpId && $parentWpId !== '0') ? $parentWpId : null,
+                'page_url'         => $pageUrl,
+                'author_name'      => $authorName,
+                'author_email'     => $authorEmail,
+                'author_url'       => $authorUrl ?: null,
+                'content'          => $message,
+                'created_at'       => date('Y-m-d H:i:s', strtotime($createdAt)),
+                'status'           => 'approved',
+            ];
+        }
     }
 
-    // Get thread URL
-    $pageUrl = $threads[$threadId] ?? null;
-    if (!$pageUrl) {
-        echo "  Warning: Could not find thread for comment $dsqId\n";
-        continue;
+} else {
+    // Native Disqus XML format
+    echo "Detected native Disqus format\n";
+
+    // Parse XML namespaces; dsq:id is an attribute in the disqus-internals namespace
+    $namespaces = $xml->getNamespaces(true);
+    $dsq = $namespaces['dsq'] ?? 'http://disqus.com/disqus-internals';
+
+    // Extract threads (posts/pages)
+    echo "\nExtracting threads...\n";
+    $threads = [];
+    foreach ($xml->thread as $thread) {
+        $dsqId = (string)$thread->attributes($dsq)->id;
+        $link  = (string)$thread->link;
+        if ($dsqId && $link) {
+            $parsed = parse_url($link);
+            $path   = $parsed['path'] ?? $link;
+            if (isset($parsed['query']))    $path .= '?' . $parsed['query'];
+            if (isset($parsed['fragment'])) $path .= '#' . $parsed['fragment'];
+            $threads[$dsqId] = $path;
+            echo "  Thread: $path\n";
+        }
     }
 
-    // Clean up the message (remove HTML tags)
-    $message = strip_tags($message);
-    $message = html_entity_decode($message, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+    echo "\nExtracting comments...\n";
 
-    // Default values if not provided
-    if (empty($authorName)) $authorName = 'Anonymous';
-    if (empty($authorEmail)) $authorEmail = 'anonymous@example.com';
+    foreach ($xml->post as $post) {
+        $dsqId    = (string)$post->attributes($dsq)->id;
+        $threadId = (string)$post->thread->attributes($dsq)->id;
+        $parentId = (string)$post->parent->attributes($dsq)->id;
 
-    $posts[] = [
-        'disqus_id' => $dsqId,
-        'disqus_parent_id' => $parentId ?: null,
-        'page_url' => $pageUrl,
-        'author_name' => $authorName,
-        'author_email' => $authorEmail,
-        'author_url' => $authorUrl ?: null,
-        'content' => $message,
-        'created_at' => date('Y-m-d H:i:s', strtotime($createdAt)),
-        'status' => 'approved' // Import as approved
-    ];
+        $author      = $post->author;
+        $authorName  = (string)$author->name;
+        $authorEmail = (string)$author->email;
+        $authorUrl   = (string)$author->link;
+
+        $createdAt = (string)$post->createdAt;
+        $message   = (string)$post->message;
+        $isDeleted = ((string)$post->isDeleted) === 'true';
+        $isSpam    = ((string)$post->isSpam) === 'true';
+
+        if ($isDeleted || $isSpam) {
+            echo "  Skipping deleted/spam comment: $dsqId\n";
+            continue;
+        }
+
+        $pageUrl = $threads[$threadId] ?? null;
+        if (!$pageUrl) {
+            echo "  Warning: Could not find thread for comment $dsqId\n";
+            continue;
+        }
+
+        $message = strip_tags($message);
+        $message = html_entity_decode($message, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+
+        if (empty($authorName))  $authorName  = 'Anonymous';
+        if (empty($authorEmail)) $authorEmail = 'anonymous@example.com';
+
+        $posts[] = [
+            'source_id'        => $dsqId,
+            'source_parent_id' => $parentId ?: null,
+            'page_url'         => $pageUrl,
+            'author_name'      => $authorName,
+            'author_email'     => $authorEmail,
+            'author_url'       => $authorUrl ?: null,
+            'content'          => $message,
+            'created_at'       => date('Y-m-d H:i:s', strtotime($createdAt)),
+            'status'           => 'approved',
+        ];
+    }
 }
 
 echo "\nFound " . count($posts) . " comments to import\n";
@@ -146,10 +211,10 @@ try {
     foreach ($posts as $post) {
         // Resolve parent ID
         $parentId = null;
-        if ($post['disqus_parent_id']) {
-            $parentId = $postIdMap[$post['disqus_parent_id']] ?? null;
+        if ($post['source_parent_id']) {
+            $parentId = $postIdMap[$post['source_parent_id']] ?? null;
             if ($parentId === null) {
-                echo "  Warning: Could not find parent comment for Disqus ID {$post['disqus_id']}\n";
+                echo "  Warning: Could not find parent comment for ID {$post['source_id']}\n";
             }
         }
 
@@ -164,8 +229,8 @@ try {
             $post['status']
         ]);
 
-        // Map Disqus ID to our new ID
-        $postIdMap[$post['disqus_id']] = $db->lastInsertId();
+        // Map source ID to our new ID
+        $postIdMap[$post['source_id']] = $db->lastInsertId();
 
         $imported++;
 

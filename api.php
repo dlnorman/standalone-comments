@@ -1338,83 +1338,89 @@ if ($method === 'POST' && $action === 'import_disqus') {
         jsonResponse(['error' => 'Invalid XML: ' . implode('; ', $errs)], 400);
     }
 
-    $namespaces = $xml->getNamespaces(true);
-    $dsqNs = $namespaces['dsq'] ?? 'http://disqus.com/disqus-internals';
+    // Helper: normalize a full URL to path-only (matches window.location.pathname)
+    $normUrl = function($link) {
+        $parsed = parse_url($link);
+        $path   = $parsed['path'] ?? $link;
+        if (isset($parsed['query']))    $path .= '?' . $parsed['query'];
+        if (isset($parsed['fragment'])) $path .= '#' . $parsed['fragment'];
+        return $path;
+    };
 
-    // Collect threads (page URLs); dsq:id is an attribute, <link> is a child element.
-    // Normalize to path-only so imported URLs match what the widget sends (window.location.pathname).
-    $threads = [];
-    foreach ($xml->thread as $thread) {
-        $dsqId = (string)$thread->attributes($dsqNs)->id;
-        $link  = (string)$thread->link;
-        if ($dsqId && $link) {
-            $parsed = parse_url($link);
-            $path   = $parsed['path'] ?? $link;
-            if (isset($parsed['query'])) $path .= '?' . $parsed['query'];
-            if (isset($parsed['fragment'])) $path .= '#' . $parsed['fragment'];
-            $threads[$dsqId] = $path;
+    $threads  = []; // unique page paths seen (keyed by path for dedup)
+    $rawTotal = 0;
+    $skipped  = 0;
+    $orphaned = 0;
+    $rawPosts = [];
+
+    if ($xml->getName() === 'rss') {
+        // WordPress WXR format
+        $wpNs = 'http://wordpress.org/export/1.0/';
+
+        foreach ($xml->channel->item as $item) {
+            $link = (string)$item->link;
+            if (empty($link)) continue;
+            $pageUrl = $normUrl($link);
+            $threads[$pageUrl] = $pageUrl;
+
+            $wpChildren = $item->children($wpNs);
+            if (!isset($wpChildren->comment)) continue;
+
+            foreach ($wpChildren->comment as $comment) {
+                $wp = $comment->children($wpNs);
+                $rawTotal++;
+                $approved = (string)$wp->comment_approved;
+                if ($approved !== '1') { $skipped++; continue; }
+
+                $wpId       = (string)$wp->comment_id;
+                $parentWpId = (string)$wp->comment_parent;
+                $message    = html_entity_decode(strip_tags((string)$wp->comment_content), ENT_QUOTES | ENT_HTML5, 'UTF-8');
+
+                $rawPosts[] = [
+                    'dsq_id'        => $wpId,
+                    'dsq_parent_id' => ($parentWpId && $parentWpId !== '0') ? $parentWpId : null,
+                    'page_url'      => $pageUrl,
+                    'author_name'   => (string)$wp->comment_author       ?: 'Anonymous',
+                    'author_email'  => (string)$wp->comment_author_email ?: '',
+                    'author_url'    => (string)$wp->comment_author_url   ?: null,
+                    'content'       => $message,
+                    'created_at'    => date('Y-m-d H:i:s', strtotime((string)$wp->comment_date_gmt)),
+                ];
+            }
         }
-    }
+    } else {
+        // Native Disqus XML format
+        $namespaces = $xml->getNamespaces(true);
+        $dsqNs = $namespaces['dsq'] ?? 'http://disqus.com/disqus-internals';
 
-    // Collect posts
-    $posts = [];
-    foreach ($xml->post as $post) {
-        $dsqId    = (string)$post->attributes($dsqNs)->id;
-        $threadEl = $post->thread;
-        $threadId = (string)$threadEl->attributes($dsqNs)->id;
-        $parentEl = $post->parent;
-        $parentId = $parentEl ? (string)$parentEl->attributes($dsqNs)->id : null;
+        foreach ($xml->thread as $thread) {
+            $dsqId = (string)$thread->attributes($dsqNs)->id;
+            $link  = (string)$thread->link;
+            if ($dsqId && $link) {
+                $threads[$dsqId] = $normUrl($link);
+            }
+        }
 
-        $isDeleted = ((string)$post->isDeleted) === 'true';
-        $isSpam    = ((string)$post->isSpam)    === 'true';
-        if ($isDeleted || $isSpam) continue;
-
-        $pageUrl = $threads[$threadId] ?? null;
-        if (!$pageUrl) continue;
-
-        $authorName  = (string)$post->author->name  ?: 'Anonymous';
-        $authorEmail = (string)$post->author->email ?: '';
-        $authorUrl   = (string)$post->author->link  ?: null;
-        $message     = strip_tags((string)$post->message);
-        $message     = html_entity_decode($message, ENT_QUOTES | ENT_HTML5, 'UTF-8');
-        $createdAt   = date('Y-m-d H:i:s', strtotime((string)$post->createdAt));
-
-        $posts[] = [
-            'dsq_id'        => $dsqId,
-            'dsq_parent_id' => $parentId ?: null,
-            'page_url'      => $pageUrl,
-            'author_name'   => $authorName,
-            'author_email'  => $authorEmail,
-            'author_url'    => $authorUrl,
-            'content'       => $message,
-            'created_at'    => $createdAt,
-        ];
-    }
-
-    // Count raw totals before filtering
-    $rawTotal   = 0;
-    $skipped    = 0;
-    $orphaned   = 0;
-    $rawPosts   = [];
-    foreach ($xml->post as $post) {
-        $rawTotal++;
-        $isDeleted = ((string)$post->isDeleted) === 'true';
-        $isSpam    = ((string)$post->isSpam)    === 'true';
-        $dsqId     = (string)$post->attributes($dsqNs)->id;
-        $threadId  = (string)$post->thread->attributes($dsqNs)->id;
-        $pageUrl   = $threads[$threadId] ?? null;
-        if ($isDeleted || $isSpam) { $skipped++; continue; }
-        if (!$pageUrl)             { $orphaned++; continue; }
-        $rawPosts[] = [
-            'dsq_id'        => $dsqId,
-            'dsq_parent_id' => (string)$post->parent->attributes($dsqNs)->id ?: null,
-            'page_url'      => $pageUrl,
-            'author_name'   => (string)$post->author->name  ?: 'Anonymous',
-            'author_email'  => (string)$post->author->email ?: '',
-            'author_url'    => (string)$post->author->link  ?: null,
-            'content'       => html_entity_decode(strip_tags((string)$post->message), ENT_QUOTES | ENT_HTML5, 'UTF-8'),
-            'created_at'    => date('Y-m-d H:i:s', strtotime((string)$post->createdAt)),
-        ];
+        foreach ($xml->post as $post) {
+            $rawTotal++;
+            $isDeleted = ((string)$post->isDeleted) === 'true';
+            $isSpam    = ((string)$post->isSpam)    === 'true';
+            $dsqId     = (string)$post->attributes($dsqNs)->id;
+            $threadId  = (string)$post->thread->attributes($dsqNs)->id;
+            $pageUrl   = $threads[$threadId] ?? null;
+            if ($isDeleted || $isSpam) { $skipped++; continue; }
+            if (!$pageUrl)             { $orphaned++; continue; }
+            $rawPosts[] = [
+                'dsq_id'        => $dsqId,
+                'dsq_parent_id' => (string)$post->parent->attributes($dsqNs)->id ?: null,
+                'page_url'      => $pageUrl,
+                'author_name'   => (string)$post->author->name  ?: 'Anonymous',
+                'author_email'  => (string)$post->author->email ?: '',
+                'author_url'    => (string)$post->author->link  ?: null,
+                'content'       => html_entity_decode(strip_tags((string)$post->message), ENT_QUOTES | ENT_HTML5, 'UTF-8'),
+                'created_at'    => date('Y-m-d H:i:s', strtotime((string)$post->createdAt)),
+            ];
+        }
     }
 
     // Build a dedup set from existing comments: "created_at|page_url|author_name"
