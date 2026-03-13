@@ -513,11 +513,20 @@ if ($method === 'GET' && $action === 'comments') {
     $stmt = $db->prepare("
         SELECT c.id, c.page_url, c.parent_id, c.author_name, c.author_email, c.author_url,
                c.content, c.created_at, c.status,
-               COALESCE((SELECT COUNT(*) FROM votes WHERE comment_id = c.id AND reaction_type = 'heart'), 0) AS votes_heart,
-               COALESCE((SELECT COUNT(*) FROM votes WHERE comment_id = c.id AND reaction_type = 'thumbsup'), 0) AS votes_thumbsup,
-               COALESCE((SELECT COUNT(*) FROM votes WHERE comment_id = c.id AND reaction_type = 'lightbulb'), 0) AS votes_lightbulb,
-               COALESCE((SELECT COUNT(*) FROM votes WHERE comment_id = c.id AND reaction_type = 'funny'), 0) AS votes_funny
+               COALESCE(v.votes_heart, 0) AS votes_heart,
+               COALESCE(v.votes_thumbsup, 0) AS votes_thumbsup,
+               COALESCE(v.votes_lightbulb, 0) AS votes_lightbulb,
+               COALESCE(v.votes_funny, 0) AS votes_funny
         FROM comments c
+        LEFT JOIN (
+            SELECT comment_id,
+                   SUM(reaction_type = 'heart') AS votes_heart,
+                   SUM(reaction_type = 'thumbsup') AS votes_thumbsup,
+                   SUM(reaction_type = 'lightbulb') AS votes_lightbulb,
+                   SUM(reaction_type = 'funny') AS votes_funny
+            FROM votes
+            GROUP BY comment_id
+        ) v ON v.comment_id = c.id
         WHERE c.page_url = ? AND c.status IN ($placeholders)
         ORDER BY c.created_at ASC
         LIMIT ? OFFSET ?
@@ -546,13 +555,14 @@ if ($method === 'GET' && $action === 'comments') {
         }
     }
 
-    // Fetch post-level reaction counts for this page
-    $allowedReactionTypes = ['heart', 'thumbsup', 'lightbulb', 'funny'];
-    $postReactions = [];
-    foreach ($allowedReactionTypes as $type) {
-        $prStmt = $db->prepare("SELECT COUNT(*) as count FROM post_reactions WHERE page_url = ? AND reaction_type = ?");
-        $prStmt->execute([$pageUrl, $type]);
-        $postReactions[$type] = (int)$prStmt->fetch()['count'];
+    // Fetch post-level reaction counts for this page (single query)
+    $postReactions = ['heart' => 0, 'thumbsup' => 0, 'lightbulb' => 0, 'funny' => 0];
+    $prStmt = $db->prepare("SELECT reaction_type, COUNT(*) as count FROM post_reactions WHERE page_url = ? GROUP BY reaction_type");
+    $prStmt->execute([$pageUrl]);
+    foreach ($prStmt->fetchAll() as $row) {
+        if (isset($postReactions[$row['reaction_type']])) {
+            $postReactions[$row['reaction_type']] = (int)$row['count'];
+        }
     }
 
     jsonResponse([

@@ -39,6 +39,10 @@ function getDatabase() {
         $db->exec('PRAGMA busy_timeout = 30000');
         // Enable WAL mode for better concurrency
         $db->exec('PRAGMA journal_mode = WAL');
+        // Performance tuning
+        $db->exec('PRAGMA cache_size = -8000');    // 8MB page cache
+        $db->exec('PRAGMA temp_store = MEMORY');   // temp tables in RAM
+        $db->exec('PRAGMA mmap_size = 134217728'); // 128MB memory-mapped I/O
         return $db;
     } catch (PDOException $e) {
         error_log('Database connection failed: ' . $e->getMessage());
@@ -106,7 +110,8 @@ function initDatabase() {
                 ('allow_guest_comments', 'true'),
                 ('max_comment_length', '5000'),
                 ('enable_notifications', 'false'),
-                ('admin_email', '');
+                ('admin_email', ''),
+                ('schema_version', '0');
 
             CREATE TABLE IF NOT EXISTS subscriptions (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -205,11 +210,27 @@ function initDatabase() {
     }
 }
 
+// Bump this when adding new migrations so existing installs skip the full migration block
+define('CURRENT_SCHEMA_VERSION', '2');
+
 function migrateDatabase() {
     $db = getDatabase();
     if (!$db) return false;
 
     try {
+        // Fast path: if schema is already current, skip all migration checks
+        $versionStmt = $db->query("SELECT value FROM settings WHERE key = 'schema_version'");
+        $storedVersion = $versionStmt ? $versionStmt->fetchColumn() : '0';
+        if ($storedVersion === CURRENT_SCHEMA_VERSION) {
+            // Still run probabilistic cleanup even on fast path
+            if (rand(1, 20) === 1) {
+                $db->exec("DELETE FROM vote_log WHERE created_at < datetime('now', '-1 hour')");
+                $db->exec("DELETE FROM sessions WHERE expires_at < datetime('now')");
+                $db->exec("DELETE FROM login_attempts WHERE attempted_at < datetime('now', '-7 days')");
+            }
+            return true;
+        }
+
         // Check if subscriptions table exists, if not create it
         if (!tableExists($db, 'subscriptions')) {
             $db->exec("
@@ -379,6 +400,10 @@ function migrateDatabase() {
         if (rand(1, 20) === 1) {
             $db->exec("DELETE FROM login_attempts WHERE attempted_at < datetime('now', '-7 days')");
         }
+
+        // Update query planner statistics and mark schema as current
+        $db->exec("ANALYZE");
+        $db->exec("INSERT OR REPLACE INTO settings (key, value) VALUES ('schema_version', '" . CURRENT_SCHEMA_VERSION . "')");
 
         return true;
     } catch (PDOException $e) {
