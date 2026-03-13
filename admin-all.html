@@ -422,6 +422,8 @@
                 <a href="admin-all.html" class="active">All Comments</a>
                 <a href="admin-subscriptions.html">Subscriptions</a>
                 <a href="admin-post-reactions.html">Post Reactions</a>
+                <a href="admin-posts.html">Posts</a>
+                <a href="admin-analytics.html">Analytics</a>
             </div>
         </header>
 
@@ -605,8 +607,14 @@
             // Pre-apply status filter if provided in URL params
             const params = new URLSearchParams(window.location.search);
             const statusParam = params.get('status');
+            const urlParam = params.get('url');
             if (statusParam && ['approved', 'pending', 'spam'].includes(statusParam)) {
                 document.getElementById('filter-status').value = statusParam;
+            }
+            if (urlParam) {
+                document.getElementById('filter-url').value = urlParam;
+            }
+            if (statusParam || urlParam) {
                 applyFilters();
             }
         }

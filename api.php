@@ -1243,6 +1243,191 @@ if ($method === 'GET' && $action === 'post_reactions_summary') {
     jsonResponse(['pages' => $rows, 'total' => $totalCount]);
 }
 
+// GET /api.php?action=posts_summary (admin)
+// Returns per-post comment statistics aggregated by page_url
+if ($method === 'GET' && $action === 'posts_summary') {
+    if (!isAdmin()) {
+        jsonResponse(['error' => 'Unauthorized'], 401);
+    }
+
+    $search = trim($_GET['search'] ?? '');
+
+    $whereClause = '';
+    $params = [];
+    if ($search !== '') {
+        $whereClause = 'WHERE c.page_url LIKE ?';
+        $params[] = '%' . $search . '%';
+    }
+
+    $stmt = $db->prepare("
+        SELECT
+            c.page_url,
+            COUNT(*)                                                        AS total_comments,
+            SUM(CASE WHEN c.status = 'approved' THEN 1 ELSE 0 END)         AS approved_count,
+            SUM(CASE WHEN c.status = 'pending'  THEN 1 ELSE 0 END)         AS pending_count,
+            SUM(CASE WHEN c.status = 'spam'     THEN 1 ELSE 0 END)         AS spam_count,
+            SUM(CASE WHEN c.status = 'deleted'  THEN 1 ELSE 0 END)         AS deleted_count,
+            MIN(c.created_at)                                               AS first_comment_at,
+            MAX(c.created_at)                                               AS last_comment_at,
+            COUNT(DISTINCT c.author_email)                                  AS unique_authors,
+            COUNT(DISTINCT c.ip_address)                                    AS unique_ips,
+            ROUND(AVG(LENGTH(c.content)))                                   AS avg_length,
+            COALESCE(pr.total_reactions, 0)                                 AS total_reactions
+        FROM comments c
+        LEFT JOIN (
+            SELECT page_url, COUNT(*) AS total_reactions
+            FROM post_reactions
+            GROUP BY page_url
+        ) pr ON c.page_url = pr.page_url
+        $whereClause
+        GROUP BY c.page_url
+        ORDER BY last_comment_at DESC
+    ");
+    $stmt->execute($params);
+    $posts = $stmt->fetchAll();
+
+    foreach ($posts as &$post) {
+        $post['total_comments']  = (int)$post['total_comments'];
+        $post['approved_count']  = (int)$post['approved_count'];
+        $post['pending_count']   = (int)$post['pending_count'];
+        $post['spam_count']      = (int)$post['spam_count'];
+        $post['deleted_count']   = (int)$post['deleted_count'];
+        $post['unique_authors']  = (int)$post['unique_authors'];
+        $post['unique_ips']      = (int)$post['unique_ips'];
+        $post['avg_length']      = (int)$post['avg_length'];
+        $post['total_reactions'] = (int)$post['total_reactions'];
+    }
+    unset($post);
+
+    $totalPosts    = count($posts);
+    $totalComments = array_sum(array_column($posts, 'total_comments'));
+    $totalSpam     = array_sum(array_column($posts, 'spam_count'));
+    $totalPending  = array_sum(array_column($posts, 'pending_count'));
+
+    jsonResponse([
+        'posts'   => $posts,
+        'summary' => [
+            'total_posts'    => $totalPosts,
+            'total_comments' => $totalComments,
+            'total_spam'     => $totalSpam,
+            'total_pending'  => $totalPending,
+        ],
+    ]);
+}
+
+// GET /api.php?action=analytics (admin)
+// Returns aggregated data for the analytics dashboard
+if ($method === 'GET' && $action === 'analytics') {
+    if (!isAdmin()) {
+        jsonResponse(['error' => 'Unauthorized'], 401);
+    }
+
+    // Status totals
+    $statusStmt = $db->query("SELECT status, COUNT(*) AS count FROM comments GROUP BY status");
+    $statusTotals = ['approved' => 0, 'pending' => 0, 'spam' => 0, 'deleted' => 0];
+    foreach ($statusStmt->fetchAll() as $row) {
+        if (array_key_exists($row['status'], $statusTotals)) {
+            $statusTotals[$row['status']] = (int)$row['count'];
+        }
+    }
+
+    // Timeline — daily (last 90 days)
+    $daily = $db->query("
+        SELECT strftime('%Y-%m-%d', created_at) AS period,
+               COUNT(*) AS total,
+               SUM(CASE WHEN status='approved' THEN 1 ELSE 0 END) AS approved,
+               SUM(CASE WHEN status='pending'  THEN 1 ELSE 0 END) AS pending,
+               SUM(CASE WHEN status='spam'     THEN 1 ELSE 0 END) AS spam
+        FROM comments
+        WHERE created_at >= datetime('now', '-90 days')
+        GROUP BY period ORDER BY period ASC
+    ")->fetchAll();
+
+    // Timeline — weekly (last 52 weeks)
+    $weekly = $db->query("
+        SELECT strftime('%Y-W%W', created_at) AS period,
+               COUNT(*) AS total,
+               SUM(CASE WHEN status='approved' THEN 1 ELSE 0 END) AS approved,
+               SUM(CASE WHEN status='pending'  THEN 1 ELSE 0 END) AS pending,
+               SUM(CASE WHEN status='spam'     THEN 1 ELSE 0 END) AS spam
+        FROM comments
+        WHERE created_at >= datetime('now', '-364 days')
+        GROUP BY period ORDER BY period ASC
+    ")->fetchAll();
+
+    // Timeline — monthly (all time)
+    $monthly = $db->query("
+        SELECT strftime('%Y-%m', created_at) AS period,
+               COUNT(*) AS total,
+               SUM(CASE WHEN status='approved' THEN 1 ELSE 0 END) AS approved,
+               SUM(CASE WHEN status='pending'  THEN 1 ELSE 0 END) AS pending,
+               SUM(CASE WHEN status='spam'     THEN 1 ELSE 0 END) AS spam
+        FROM comments
+        GROUP BY period ORDER BY period ASC
+    ")->fetchAll();
+
+    // Cast all timeline rows to int
+    foreach ([$daily, $weekly, $monthly] as &$arr) {
+        foreach ($arr as &$row) {
+            $row['total']    = (int)$row['total'];
+            $row['approved'] = (int)$row['approved'];
+            $row['pending']  = (int)$row['pending'];
+            $row['spam']     = (int)$row['spam'];
+        }
+        unset($row);
+    }
+    unset($arr);
+
+    // Hour-of-day distribution (all time, UTC)
+    $hourlyRows = $db->query("
+        SELECT CAST(strftime('%H', created_at) AS INTEGER) AS hour, COUNT(*) AS count
+        FROM comments GROUP BY hour ORDER BY hour
+    ")->fetchAll();
+    $hourly = array_fill(0, 24, 0);
+    foreach ($hourlyRows as $r) { $hourly[(int)$r['hour']] = (int)$r['count']; }
+
+    // Day-of-week distribution (0=Sun)
+    $dowRows = $db->query("
+        SELECT CAST(strftime('%w', created_at) AS INTEGER) AS dow, COUNT(*) AS count
+        FROM comments GROUP BY dow ORDER BY dow
+    ")->fetchAll();
+    $weekdays = array_fill(0, 7, 0);
+    foreach ($dowRows as $r) { $weekdays[(int)$r['dow']] = (int)$r['count']; }
+
+    // Top 10 posts by total comments
+    $topPosts = $db->query("
+        SELECT page_url,
+               COUNT(*) AS total,
+               SUM(CASE WHEN status='approved' THEN 1 ELSE 0 END) AS approved,
+               SUM(CASE WHEN status='pending'  THEN 1 ELSE 0 END) AS pending,
+               SUM(CASE WHEN status='spam'     THEN 1 ELSE 0 END) AS spam
+        FROM comments
+        GROUP BY page_url ORDER BY total DESC LIMIT 10
+    ")->fetchAll();
+    foreach ($topPosts as &$p) {
+        $p['total']    = (int)$p['total'];
+        $p['approved'] = (int)$p['approved'];
+        $p['pending']  = (int)$p['pending'];
+        $p['spam']     = (int)$p['spam'];
+    }
+    unset($p);
+
+    // Unique commenters / IPs
+    $unique = $db->query("
+        SELECT COUNT(DISTINCT author_email) AS emails, COUNT(DISTINCT ip_address) AS ips FROM comments
+    ")->fetch();
+
+    jsonResponse([
+        'status_totals'      => $statusTotals,
+        'timeline'           => ['daily' => $daily, 'weekly' => $weekly, 'monthly' => $monthly],
+        'hourly'             => $hourly,
+        'weekdays'           => $weekdays,
+        'top_posts'          => $topPosts,
+        'unique_commenters'  => (int)$unique['emails'],
+        'unique_ips'         => (int)$unique['ips'],
+    ]);
+}
+
 // DELETE /api.php?action=delete_post_reactions&url=... (admin)
 // Clears all post reactions for a given page URL
 if ($method === 'DELETE' && $action === 'delete_post_reactions') {
