@@ -512,6 +512,7 @@
 /* Messages */
 .comments-system .loading,
 .comments-system .no-comments,
+.comments-system .comments-closed,
 .comments-system .error {
     text-align: center;
     padding: 2rem;

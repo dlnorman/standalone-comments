@@ -8,6 +8,7 @@ class CommentSystem {
         this.apiUrl = options.apiUrl || '/comments/api.php';
         this.pageUrl = options.pageUrl || window.location.pathname;
         this.containerId = options.containerId || 'comments-container';
+        this.closed = options.closed || false;
         this.container = document.getElementById(this.containerId);
 
         if (!this.container) {
@@ -162,22 +163,26 @@ class CommentSystem {
     }
 
     render() {
+        const formHtml = this.closed
+            ? '<p class="comments-closed">Comments are closed.</p>'
+            : `<div id="comment-form-container">${this.renderCommentForm()}</div>`;
+
         this.container.innerHTML = `
             <div class="comments-system">
                 <div id="post-reactions-container">
                     ${this.renderPostReactionsSection()}
                 </div>
                 <h3 class="comments-title">Comments</h3>
-                <div id="comment-form-container">
-                    ${this.renderCommentForm()}
-                </div>
+                ${formHtml}
                 <div id="comments-list" class="comments-list">
                     <p class="loading">Loading comments...</p>
                 </div>
             </div>
         `;
 
-        this.attachFormHandler();
+        if (!this.closed) {
+            this.attachFormHandler();
+        }
     }
 
     renderCommentForm(parentId = null, parentAuthor = null) {
@@ -328,7 +333,9 @@ class CommentSystem {
         const listEl = document.getElementById('comments-list');
 
         if (comments.length === 0) {
-            listEl.innerHTML = '<p class="no-comments">No comments yet. Be the first to comment!</p>';
+            listEl.innerHTML = this.closed
+                ? '<p class="no-comments">No comments.</p>'
+                : '<p class="no-comments">No comments yet. Be the first to comment!</p>';
             return;
         }
 
@@ -382,7 +389,7 @@ class CommentSystem {
                 </div>
                 <div class="comment-actions">
                     ${upvoteBtn}
-                    <button class="btn-reply" onclick="commentsWidget.showReplyForm(${comment.id}, '${this.escapeHtml(comment.author_name).replace(/'/g, "\\'")}')">Reply</button>
+                    ${this.closed ? '' : `<button class="btn-reply" onclick="commentsWidget.showReplyForm(${comment.id}, '${this.escapeHtml(comment.author_name).replace(/'/g, "\\'")}')">Reply</button>`}
                 </div>
                 <div id="reply-form-container-${comment.id}"></div>
             </div>
@@ -465,7 +472,8 @@ function initComments() {
         const config = {
             apiUrl: container.dataset.apiUrl || window.COMMENTS_CONFIG?.apiUrl || '/comments/api.php',
             pageUrl: container.dataset.pageUrl || window.COMMENTS_CONFIG?.pageUrl || window.location.pathname,
-            containerId: 'comments-container'
+            containerId: 'comments-container',
+            closed: container.dataset.closed === 'true' || window.COMMENTS_CONFIG?.closed || false
         };
         commentsWidget = new CommentSystem(config);
     }

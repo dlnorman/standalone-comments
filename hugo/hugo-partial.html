@@ -14,10 +14,12 @@
 
 {{- $apiUrl := "/comments/api.php" -}}
 {{- $pageUrl := .RelPermalink -}}
+{{- $closed := .Params.comments_closed | default false -}}
 
 <div id="comments-container"
      data-api-url="{{ $apiUrl }}"
-     data-page-url="{{ $pageUrl }}">
+     data-page-url="{{ $pageUrl }}"
+     {{- if $closed }} data-closed="true"{{ end }}>
 </div>
 
 {{- if not (.Scratch.Get "comments-loaded") -}}
