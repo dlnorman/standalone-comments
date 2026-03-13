@@ -385,7 +385,7 @@ class CommentSystem {
                     ${pendingBadge}
                 </div>
                 <div class="comment-content">
-                    ${this.escapeHtml(comment.content).replace(/\n/g, '<br>')}
+                    ${this.renderMarkdown(comment.content)}
                 </div>
                 <div class="comment-actions">
                     ${upvoteBtn}
@@ -414,6 +414,67 @@ class CommentSystem {
 
         this.attachFormHandler(formContainer.querySelector('form'));
         formContainer.querySelector('textarea').focus();
+    }
+
+    renderMarkdown(text) {
+        const esc = (s) => String(s)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;');
+        const safeUrl = (url) => /^https?:\/\//i.test(url.trim()) ? url.trim() : '#';
+
+        // Token-based inline processor. Only 'text' tokens are eligible for further
+        // pattern matching; 'html' tokens pass through as-is. This prevents double-
+        // processing and keeps user content safely escaped.
+        function applyPattern(tokens, regex, replacer) {
+            return tokens.flatMap(token => {
+                if (token.type !== 'text') return [token];
+                const parts = [];
+                let last = 0;
+                regex.lastIndex = 0;
+                let m;
+                while ((m = regex.exec(token.value)) !== null) {
+                    if (m.index > last) parts.push({ type: 'text', value: token.value.slice(last, m.index) });
+                    parts.push({ type: 'html', value: replacer(m) });
+                    last = m.index + m[0].length;
+                }
+                if (last < token.value.length) parts.push({ type: 'text', value: token.value.slice(last) });
+                return parts.length ? parts : [token];
+            });
+        }
+
+        function renderInline(str) {
+            let tokens = [{ type: 'text', value: str }];
+            // inline code first — protects contents from other patterns
+            tokens = applyPattern(tokens, /`([^`]+)`/g,
+                m => `<code>${esc(m[1])}</code>`);
+            // images before links (![...] would also match [...])
+            tokens = applyPattern(tokens, /!\[([^\]]*)\]\(([^)]+)\)/g,
+                m => `<img src="${esc(safeUrl(m[2]))}" alt="${esc(m[1])}" loading="lazy">`);
+            // markdown links (before bare-URL pass, so link URLs aren't double-linked)
+            tokens = applyPattern(tokens, /\[([^\]]+)\]\(([^)]+)\)/g,
+                m => `<a href="${esc(safeUrl(m[2]))}" rel="nofollow noopener" target="_blank">${esc(m[1])}</a>`);
+            // bare URLs — negative lookbehind strips trailing punctuation
+            tokens = applyPattern(tokens, /https?:\/\/[^\s<>"')\]]+(?<![.,;:!?])/g,
+                m => `<a href="${esc(m[0])}" rel="nofollow noopener" target="_blank">${esc(m[0])}</a>`);
+            // bold
+            tokens = applyPattern(tokens, /\*\*([^*\n]+)\*\*/g,
+                m => `<strong>${esc(m[1])}</strong>`);
+            // italic (* and _)
+            tokens = applyPattern(tokens, /\*([^*\n]+)\*/g,
+                m => `<em>${esc(m[1])}</em>`);
+            tokens = applyPattern(tokens, /_([^_\n]+)_/g,
+                m => `<em>${esc(m[1])}</em>`);
+            return tokens.map(t => t.type === 'html' ? t.value : esc(t.value)).join('');
+        }
+
+        return text.split('\n').map(line => {
+            if (/^>\s?/.test(line)) {
+                return `<blockquote>${renderInline(line.replace(/^>\s?/, ''))}</blockquote>`;
+            }
+            return renderInline(line);
+        }).join('<br>');
     }
 
     escapeHtml(text) {

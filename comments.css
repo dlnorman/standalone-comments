@@ -499,6 +499,42 @@
     line-height: 1.6;
 }
 
+.comments-system .comment-content a {
+    color: var(--cs-link-color, #4a90e2);
+    word-break: break-all;
+}
+
+.comments-system .comment-content code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 0.875em;
+    background: var(--cs-code-bg, rgba(0, 0, 0, 0.06));
+    padding: 0.1em 0.35em;
+    border-radius: 3px;
+}
+
+.comments-system .comment-content blockquote {
+    border-left: 3px solid var(--cs-blockquote-border, #ccc);
+    margin: 0.25rem 0;
+    padding: 0.1rem 0.75rem;
+    color: var(--cs-comment-meta-color);
+    font-style: italic;
+}
+
+.comments-system .comment-content img {
+    max-width: 100%;
+    height: auto;
+    border-radius: 4px;
+}
+
+@media (prefers-color-scheme: dark) {
+    .comments-system .comment-content code {
+        background: rgba(255, 255, 255, 0.1);
+    }
+    .comments-system .comment-content blockquote {
+        border-left-color: #555;
+    }
+}
+
 .comments-system .comment-actions {
     display: flex;
     gap: 0.5rem;
