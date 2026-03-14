@@ -148,11 +148,6 @@
             color: #155724;
         }
 
-        .message.info {
-            background-color: #d1ecf1;
-            color: #0c5460;
-        }
-
         .stats {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -251,13 +246,6 @@
             color: #888;
         }
 
-        .test-email-form {
-            margin-top: 1rem;
-            padding: 1rem;
-            background: #f9f9f9;
-            border-radius: 4px;
-        }
-
         /* Mobile Responsive Styles */
         @media (max-width: 768px) {
             .container {
@@ -350,6 +338,8 @@
                 <a href="admin-post-reactions.html">Post Reactions</a>
                 <a href="admin-posts.html">Posts</a>
                 <a href="admin-analytics.html">Analytics</a>
+                <a href="admin-utilities.html">Utilities</a>
+                <a href="#" onclick="logout(); return false;" style="color:#dc3545;">Logout</a>
             </div>
         </header>
 
@@ -370,25 +360,6 @@
                 <div class="stat-card">
                     <div class="stat-number" id="stat-pages">0</div>
                     <div class="stat-label">Pages with Subscribers</div>
-                </div>
-            </div>
-
-            <div class="section-card">
-                <h2>Test Email Notifications</h2>
-                <div id="test-message"></div>
-                <div class="test-email-form">
-                    <div class="form-group">
-                        <label for="test-email">Send test email to:</label>
-                        <input type="email" id="test-email" placeholder="your@email.com" required>
-                    </div>
-                    <div class="form-group">
-                        <label for="test-page-url">For page (URL):</label>
-                        <input type="text" id="test-page-url" placeholder="/2025/01/01/test-post/" value="/">
-                    </div>
-                    <button class="btn btn-primary" onclick="sendTestEmail()">Send Test Email</button>
-                </div>
-                <div style="margin-top: 1rem; padding: 1rem; background: #fff3cd; border-radius: 4px;">
-                    <strong>Note:</strong> This sends a real notification email. Check your spam folder if you don't see it.
                 </div>
             </div>
 
@@ -613,50 +584,15 @@
             }
         }
 
-        async function sendTestEmail() {
-            const email = document.getElementById('test-email').value;
-            const pageUrl = document.getElementById('test-page-url').value;
-            const messageEl = document.getElementById('test-message');
-
-            if (!email) {
-                messageEl.innerHTML = '<div class="message error">Please enter an email address</div>';
-                return;
-            }
-
-            messageEl.innerHTML = '<div class="message info">Sending test email...</div>';
-
-            try {
-                // Ensure we have CSRF token
-                await ensureCSRFToken();
-
-                const response = await fetch(`${API_URL}?action=test_email`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    credentials: 'include',
-                    body: JSON.stringify({
-                        email,
-                        page_url: pageUrl,
-                        csrf_token: csrfToken
-                    })
-                });
-
-                const result = await response.json();
-
-                if (response.ok) {
-                    messageEl.innerHTML = `<div class="message success">${result.message || 'Test email sent! Check your inbox (and spam folder).'}</div>`;
-                } else {
-                    messageEl.innerHTML = `<div class="message error">${result.error || 'Failed to send email'}</div>`;
-                }
-            } catch (error) {
-                console.error('Error sending test email:', error);
-                messageEl.innerHTML = `<div class="message error">Network error: ${error.message}</div>`;
-            }
-        }
-
         function escapeHtml(text) {
             const div = document.createElement('div');
             div.textContent = text;
             return div.innerHTML;
+        }
+
+        async function logout() {
+            await fetch(`${API_URL}?action=logout`, { method: 'POST', credentials: 'include' });
+            location.reload();
         }
     </script>
 </body>

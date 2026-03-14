@@ -103,6 +103,24 @@ if (!$db) {
 $method = $_SERVER['REQUEST_METHOD'];
 $action = $_GET['action'] ?? '';
 
+// Periodic housekeeping: prune rows that are no longer useful.
+// Runs on ~1% of requests to avoid adding overhead to every call.
+function periodicCleanup($db) {
+    // vote_log is only used for rate-limiting within a 60-second window
+    $db->exec("DELETE FROM vote_log WHERE created_at < datetime('now', '-2 hours')");
+    // login_attempts are checked within a 1-hour window
+    $db->exec("DELETE FROM login_attempts WHERE attempted_at < datetime('now', '-2 hours')");
+    // expired sessions
+    $db->exec("DELETE FROM sessions WHERE expires_at < datetime('now')");
+    // processed/failed email queue entries older than 30 days
+    if (tableExists($db, 'email_queue')) {
+        $db->exec("DELETE FROM email_queue WHERE status IN ('sent','failed') AND created_at < datetime('now', '-30 days')");
+    }
+}
+if (rand(1, 100) === 1) {
+    periodicCleanup($db);
+}
+
 function jsonResponse($data, $code = 200) {
     http_response_code($code);
     echo json_encode($data);
@@ -149,7 +167,7 @@ function isAdmin() {
         $stmt = $db->prepare("SELECT value FROM settings WHERE key = 'admin_token'");
         $stmt->execute();
         $result = $stmt->fetch();
-        return $result && $result['value'] === $token;
+        return $result && hash_equals($result['value'], $token);
     }
     return false;
 }
@@ -855,6 +873,24 @@ if ($method === 'POST' && $action === 'login') {
     }
 }
 
+// POST /api.php?action=logout (admin)
+if ($method === 'POST' && $action === 'logout') {
+    if (isset($_COOKIE[ADMIN_TOKEN_COOKIE])) {
+        $token = $_COOKIE[ADMIN_TOKEN_COOKIE];
+        // Invalidate the session in the database
+        $stmt = $db->prepare("DELETE FROM sessions WHERE token = ?");
+        $stmt->execute([$token]);
+        // Clear the admin_token fallback too
+        $stmt = $db->prepare("DELETE FROM settings WHERE key = 'admin_token' AND value = ?");
+        $stmt->execute([$token]);
+    }
+    // Expire the cookie
+    $isSecure = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') || $_SERVER['SERVER_PORT'] == 443;
+    setcookie(ADMIN_TOKEN_COOKIE, '', time() - 3600, '/comments/', '', $isSecure, true);
+    setcookie('csrf_token', '', time() - 3600, '/comments/', '', $isSecure, false);
+    jsonResponse(['success' => true]);
+}
+
 // PUT /api.php?action=moderate&id=...
 if ($method === 'PUT' && $action === 'moderate') {
     if (!isAdmin()) {
@@ -948,37 +984,72 @@ if ($method === 'GET' && $action === 'all') {
         jsonResponse(['error' => 'Unauthorized'], 401);
     }
 
-    // Add pagination to prevent browser crashes with large datasets
-    $limit = isset($_GET['limit']) ? min(max(1, (int)$_GET['limit']), 10000) : 50;
-    $offset = isset($_GET['offset']) ? max(0, (int)$_GET['offset']) : 0;
+    $limit        = isset($_GET['limit'])  ? min(max(1, (int)$_GET['limit']), 100) : 50;
+    $offset       = isset($_GET['offset']) ? max(0, (int)$_GET['offset'])           : 0;
+    $statusFilter = trim($_GET['status']   ?? 'all');
+    $search       = trim($_GET['search']   ?? '');
 
-    // Get total count
-    $countStmt = $db->query("SELECT COUNT(*) as total FROM comments");
-    $countResult = $countStmt->fetch();
-    $total = $countResult['total'];
+    // Build WHERE clause from filters
+    $where  = [];
+    $params = [];
+    if ($statusFilter !== 'all' && in_array($statusFilter, ['pending', 'approved', 'spam', 'deleted'])) {
+        $where[]  = 'c.status = ?';
+        $params[] = $statusFilter;
+    }
+    if ($search !== '') {
+        $where[]  = '(c.author_name LIKE ? OR c.author_email LIKE ? OR c.page_url LIKE ? OR c.content LIKE ?)';
+        $s = '%' . $search . '%';
+        $params[] = $s; $params[] = $s; $params[] = $s; $params[] = $s;
+    }
+    $whereSQL = $where ? ('WHERE ' . implode(' AND ', $where)) : '';
 
+    // Filtered count (for pagination)
+    $countStmt = $db->prepare("SELECT COUNT(*) as total FROM comments c $whereSQL");
+    $countStmt->execute($params);
+    $total = (int)$countStmt->fetch()['total'];
+
+    // Unfiltered status aggregates (for the stat cards — always full-table)
+    $aggrRows = $db->query("SELECT status, COUNT(*) as count FROM comments GROUP BY status")->fetchAll();
+    $aggregates = ['pending' => 0, 'approved' => 0, 'spam' => 0, 'deleted' => 0];
+    foreach ($aggrRows as $row) {
+        if (isset($aggregates[$row['status']])) {
+            $aggregates[$row['status']] = (int)$row['count'];
+        }
+    }
+
+    // Use a single LEFT JOIN for vote counts instead of 4 correlated subqueries
     $stmt = $db->prepare("
         SELECT c.id, c.page_url, c.parent_id, c.author_name, c.author_email, c.author_url,
                c.content, c.created_at, c.status, c.ip_address,
-               COALESCE((SELECT COUNT(*) FROM votes WHERE comment_id = c.id AND reaction_type = 'heart'), 0) AS votes_heart,
-               COALESCE((SELECT COUNT(*) FROM votes WHERE comment_id = c.id AND reaction_type = 'thumbsup'), 0) AS votes_thumbsup,
-               COALESCE((SELECT COUNT(*) FROM votes WHERE comment_id = c.id AND reaction_type = 'lightbulb'), 0) AS votes_lightbulb,
-               COALESCE((SELECT COUNT(*) FROM votes WHERE comment_id = c.id AND reaction_type = 'funny'), 0) AS votes_funny
+               COALESCE(v.votes_heart, 0)     AS votes_heart,
+               COALESCE(v.votes_thumbsup, 0)  AS votes_thumbsup,
+               COALESCE(v.votes_lightbulb, 0) AS votes_lightbulb,
+               COALESCE(v.votes_funny, 0)     AS votes_funny
         FROM comments c
+        LEFT JOIN (
+            SELECT comment_id,
+                   SUM(reaction_type = 'heart')     AS votes_heart,
+                   SUM(reaction_type = 'thumbsup')  AS votes_thumbsup,
+                   SUM(reaction_type = 'lightbulb') AS votes_lightbulb,
+                   SUM(reaction_type = 'funny')     AS votes_funny
+            FROM votes GROUP BY comment_id
+        ) v ON v.comment_id = c.id
+        $whereSQL
         ORDER BY c.created_at DESC
         LIMIT ? OFFSET ?
     ");
-    $stmt->execute([$limit, $offset]);
+    $stmt->execute(array_merge($params, [$limit, $offset]));
     $comments = $stmt->fetchAll();
 
     jsonResponse([
-        'comments' => $comments,
+        'comments'   => $comments,
+        'aggregates' => $aggregates,
         'pagination' => [
-            'total' => $total,
-            'limit' => $limit,
-            'offset' => $offset,
-            'hasMore' => ($offset + $limit) < $total
-        ]
+            'total'   => $total,
+            'limit'   => $limit,
+            'offset'  => $offset,
+            'hasMore' => ($offset + $limit) < $total,
+        ],
     ]);
 }
 
@@ -1525,8 +1596,14 @@ if ($method === 'POST' && $action === 'import_disqus') {
         jsonResponse(['error' => 'No file content received'], 400);
     }
 
+    // Disable external entity loading to prevent XXE attacks.
+    // PHP 8.0+ disables this by default; the function is deprecated there but safe to call.
+    if (PHP_VERSION_ID < 80000) {
+        libxml_disable_entity_loader(true);
+    }
     libxml_use_internal_errors(true);
-    $xml = simplexml_load_string($xmlContent);
+    // LIBXML_NONET prevents any network access during parsing (all PHP versions)
+    $xml = simplexml_load_string($xmlContent, 'SimpleXMLElement', LIBXML_NONET);
 
     if ($xml === false) {
         $errs = array_map(fn($e) => trim($e->message), libxml_get_errors());
@@ -1743,6 +1820,130 @@ if ($method === 'POST' && $action === 'normalize_urls') {
     }
 
     jsonResponse(['success' => true, 'comments_updated' => $fixed]);
+}
+
+// GET /api.php?action=db_stats (admin)
+if ($method === 'GET' && $action === 'db_stats') {
+    if (!isAdmin()) {
+        jsonResponse(['error' => 'Unauthorized'], 401);
+    }
+
+    $tables = ['comments', 'settings', 'subscriptions', 'email_queue', 'login_attempts', 'sessions', 'votes', 'vote_log', 'post_reactions'];
+    $stats = [];
+    foreach ($tables as $table) {
+        if (tableExists($db, $table)) {
+            $row = $db->query("SELECT COUNT(*) as count FROM {$table}")->fetch();
+            $stats[$table] = (int)$row['count'];
+        }
+    }
+
+    // Count comments by status
+    $statusCounts = [];
+    $statusRows = $db->query("SELECT status, COUNT(*) as count FROM comments GROUP BY status")->fetchAll();
+    foreach ($statusRows as $row) {
+        $statusCounts[$row['status']] = (int)$row['count'];
+    }
+
+    $dbSize = file_exists(DB_PATH) ? filesize(DB_PATH) : 0;
+
+    jsonResponse([
+        'tables' => $stats,
+        'comment_statuses' => $statusCounts,
+        'db_size_bytes' => $dbSize,
+    ]);
+}
+
+// POST /api.php?action=vacuum (admin)
+if ($method === 'POST' && $action === 'vacuum') {
+    if (!isAdmin()) {
+        jsonResponse(['error' => 'Unauthorized'], 401);
+    }
+
+    $input = getInput();
+    $csrfToken = $input['csrf_token'] ?? '';
+    if (!validateCSRFToken($csrfToken)) {
+        jsonResponse(['error' => 'Invalid CSRF token'], 403);
+    }
+
+    $sizeBefore = file_exists(DB_PATH) ? filesize(DB_PATH) : 0;
+    periodicCleanup($db);
+    $db->exec('VACUUM');
+    $sizeAfter = file_exists(DB_PATH) ? filesize(DB_PATH) : 0;
+
+    jsonResponse([
+        'success' => true,
+        'size_before' => $sizeBefore,
+        'size_after' => $sizeAfter,
+        'saved_bytes' => max(0, $sizeBefore - $sizeAfter),
+    ]);
+}
+
+// POST /api.php?action=delete_spam (admin)
+if ($method === 'POST' && $action === 'delete_spam') {
+    if (!isAdmin()) {
+        jsonResponse(['error' => 'Unauthorized'], 401);
+    }
+
+    $input = getInput();
+    $csrfToken = $input['csrf_token'] ?? '';
+    if (!validateCSRFToken($csrfToken)) {
+        jsonResponse(['error' => 'Invalid CSRF token'], 403);
+    }
+
+    $stmt = $db->query("SELECT COUNT(*) as count FROM comments WHERE status = 'spam'");
+    $count = (int)$stmt->fetch()['count'];
+    $db->exec("DELETE FROM comments WHERE status = 'spam'");
+
+    jsonResponse(['success' => true, 'deleted' => $count]);
+}
+
+// GET /api.php?action=get_settings (admin)
+if ($method === 'GET' && $action === 'get_settings') {
+    if (!isAdmin()) {
+        jsonResponse(['error' => 'Unauthorized'], 401);
+    }
+
+    $keys = ['require_moderation', 'enable_notifications', 'admin_email'];
+    $settings = [];
+    foreach ($keys as $key) {
+        $stmt = $db->prepare("SELECT value FROM settings WHERE key = ?");
+        $stmt->execute([$key]);
+        $row = $stmt->fetch();
+        $settings[$key] = $row ? $row['value'] : null;
+    }
+
+    jsonResponse(['settings' => $settings]);
+}
+
+// POST /api.php?action=save_settings (admin)
+if ($method === 'POST' && $action === 'save_settings') {
+    if (!isAdmin()) {
+        jsonResponse(['error' => 'Unauthorized'], 401);
+    }
+
+    $input = getInput();
+    $csrfToken = $input['csrf_token'] ?? '';
+    if (!validateCSRFToken($csrfToken)) {
+        jsonResponse(['error' => 'Invalid CSRF token'], 403);
+    }
+
+    $allowed = ['require_moderation', 'enable_notifications', 'admin_email'];
+    $stmt = $db->prepare("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)");
+
+    foreach ($allowed as $key) {
+        if (array_key_exists($key, $input)) {
+            $value = $input[$key];
+            if (in_array($key, ['require_moderation', 'enable_notifications'])) {
+                $value = ($value === 'true' || $value === true || $value === '1' || $value === 1) ? 'true' : 'false';
+            }
+            if ($key === 'admin_email' && !empty($value) && !filter_var($value, FILTER_VALIDATE_EMAIL)) {
+                jsonResponse(['error' => 'Invalid email address'], 400);
+            }
+            $stmt->execute([$key, $value]);
+        }
+    }
+
+    jsonResponse(['success' => true]);
 }
 
 jsonResponse(['error' => 'Invalid action'], 400);

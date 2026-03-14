@@ -607,6 +607,8 @@
                 <a href="admin-post-reactions.html">Post Reactions</a>
                 <a href="admin-posts.html" class="active">Posts</a>
                 <a href="admin-analytics.html">Analytics</a>
+                <a href="admin-utilities.html">Utilities</a>
+                <a href="#" onclick="logout(); return false;" style="color:#dc3545;">Logout</a>
             </div>
         </header>
 
@@ -1032,6 +1034,11 @@
             const d = document.createElement('div');
             d.textContent = String(text ?? '');
             return d.innerHTML;
+        }
+
+        async function logout() {
+            await fetch(`${API_URL}?action=logout`, { method: 'POST', credentials: 'include' });
+            location.reload();
         }
     </script>
 </body>
