@@ -3,61 +3,70 @@
  */
 
 .comments-system {
-    /* CSS Variables for easy theming and adaptation */
+    /*
+     * Theme inherits from host page by default.
+     * Backgrounds use currentColor-tinted overlays; inputs use system colors
+     * (Field/FieldText) so OS dark/light + host theme both apply automatically.
+     * Override any --cs-* variable to customize.
+     */
+    color-scheme: light dark;
+
     --cs-font-family: inherit;
     --cs-text-color: inherit;
     --cs-heading-color: inherit;
     --cs-link-color: #4a90e2;
 
-    --cs-form-bg: rgba(0, 0, 0, 0.03);
+    --cs-form-bg: color-mix(in srgb, currentColor 4%, transparent);
     --cs-form-padding: 1.5rem;
     --cs-form-radius: 8px;
-    --cs-form-border: 1px solid rgba(0, 0, 0, 0.05);
+    --cs-form-border: 1px solid color-mix(in srgb, currentColor 12%, transparent);
 
-    --cs-input-bg: #ffffff;
-    --cs-input-border: #dddddd;
-    --cs-input-text: #333333;
-    --cs-input-focus-border: #4a90e2;
-    --cs-input-focus-shadow: rgba(74, 144, 226, 0.1);
+    --cs-input-bg: color-mix(in srgb, currentColor 6%, transparent);
+    --cs-input-border: color-mix(in srgb, currentColor 30%, transparent);
+    --cs-input-text: inherit;
+    --cs-input-focus-border: var(--cs-link-color);
+    --cs-input-focus-shadow: color-mix(in srgb, var(--cs-link-color) 15%, transparent);
 
-    /* Button Colors - High Contrast Defaults */
     --cs-btn-submit-bg: #2563eb;
     --cs-btn-submit-text: #ffffff;
     --cs-btn-submit-hover: #1d4ed8;
     --cs-btn-submit-border: #2563eb;
 
-    --cs-btn-cancel-bg: #f3f4f6;
-    --cs-btn-cancel-text: #374151;
-    --cs-btn-cancel-hover: #e5e7eb;
-    --cs-btn-cancel-border: #d1d5db;
+    --cs-btn-cancel-bg: color-mix(in srgb, currentColor 8%, transparent);
+    --cs-btn-cancel-text: inherit;
+    --cs-btn-cancel-hover: color-mix(in srgb, currentColor 14%, transparent);
+    --cs-btn-cancel-border: color-mix(in srgb, currentColor 20%, transparent);
 
-    --cs-btn-reply-color: #4a90e2;
-    --cs-btn-reply-border: #dddddd;
-    --cs-btn-reply-hover-bg: rgba(0, 0, 0, 0.05);
+    --cs-btn-reply-color: var(--cs-link-color);
+    --cs-btn-reply-border: color-mix(in srgb, currentColor 20%, transparent);
+    --cs-btn-reply-hover-bg: color-mix(in srgb, currentColor 8%, transparent);
 
-    --cs-btn-reaction-color: #888888;
-    --cs-btn-reaction-border: #dddddd;
-    --cs-btn-reaction-hover-bg: rgba(0, 0, 0, 0.04);
+    --cs-btn-reaction-color: color-mix(in srgb, currentColor 65%, transparent);
+    --cs-btn-reaction-border: color-mix(in srgb, currentColor 20%, transparent);
+    --cs-btn-reaction-hover-bg: color-mix(in srgb, currentColor 8%, transparent);
     --cs-reaction-heart-color: #e05a6a;
     --cs-reaction-thumbsup-color: #4a90e2;
     --cs-reaction-lightbulb-color: #f59e0b;
     --cs-reaction-funny-color: #10b981;
 
-    --cs-message-success-bg: #d4edda;
-    --cs-message-success-text: #155724;
-    --cs-message-error-bg: #f8d7da;
-    --cs-message-error-text: #721c24;
-    --cs-message-info-bg: #d1ecf1;
-    --cs-message-info-text: #0c5460;
+    --cs-message-success-bg: rgba(40, 167, 69, 0.15);
+    --cs-message-success-text: inherit;
+    --cs-message-error-bg: rgba(220, 53, 69, 0.15);
+    --cs-message-error-text: inherit;
+    --cs-message-info-bg: rgba(23, 162, 184, 0.15);
+    --cs-message-info-text: inherit;
 
-    --cs-comment-bg: #ffffff;
-    --cs-comment-border: #e0e0e0;
-    --cs-comment-shadow-hover: rgba(0, 0, 0, 0.05);
-    --cs-comment-meta-color: #888888;
+    --cs-comment-bg: transparent;
+    --cs-comment-border: color-mix(in srgb, currentColor 15%, transparent);
+    --cs-comment-shadow-hover: color-mix(in srgb, currentColor 10%, transparent);
+    --cs-comment-meta-color: color-mix(in srgb, currentColor 60%, transparent);
 
-    --cs-pending-bg: #fffbf0;
+    --cs-pending-bg: rgba(255, 193, 7, 0.12);
     --cs-pending-badge-bg: #ffc107;
     --cs-pending-badge-text: #333333;
+
+    --cs-code-bg: color-mix(in srgb, currentColor 8%, transparent);
+    --cs-blockquote-border: color-mix(in srgb, currentColor 25%, transparent);
 
     max-width: 800px;
     margin: 2rem auto;
@@ -66,101 +75,36 @@
     line-height: 1.6;
 }
 
-/* Dark Mode Support (Media Query + Class fallback) */
+/*
+ * OS dark mode: bump link/reaction accents brighter for contrast.
+ * Backgrounds/borders/inputs auto-adapt via currentColor + system colors,
+ * so they're not overridden here.
+ */
 @media (prefers-color-scheme: dark) {
     .comments-system {
         --cs-link-color: #60a5fa;
-
-        --cs-form-bg: rgba(255, 255, 255, 0.05);
-        --cs-form-border: 1px solid rgba(255, 255, 255, 0.1);
-
-        --cs-input-bg: #1f2937;
-        --cs-input-border: #374151;
-        --cs-input-text: #f3f4f6;
-        --cs-input-focus-border: #60a5fa;
-        --cs-input-focus-shadow: rgba(96, 165, 250, 0.2);
-
         --cs-btn-submit-bg: #3b82f6;
-        --cs-btn-submit-text: #ffffff;
         --cs-btn-submit-hover: #2563eb;
         --cs-btn-submit-border: #3b82f6;
-
-        --cs-btn-cancel-bg: #374151;
-        --cs-btn-cancel-text: #f3f4f6;
-        --cs-btn-cancel-hover: #4b5563;
-        --cs-btn-cancel-border: #4b5563;
-
-        --cs-btn-reply-color: #60a5fa;
-        --cs-btn-reply-border: #374151;
-        --cs-btn-reply-hover-bg: rgba(255, 255, 255, 0.05);
-
-        --cs-btn-reaction-color: #6b7280;
-        --cs-btn-reaction-border: #374151;
-        --cs-btn-reaction-hover-bg: rgba(255, 255, 255, 0.05);
         --cs-reaction-heart-color: #f87171;
         --cs-reaction-thumbsup-color: #60a5fa;
         --cs-reaction-lightbulb-color: #fbbf24;
         --cs-reaction-funny-color: #34d399;
-
-        --cs-message-success-bg: rgba(21, 87, 36, 0.4);
-        --cs-message-success-text: #e2e3e5;
-        --cs-message-error-bg: rgba(114, 28, 36, 0.4);
-        --cs-message-error-text: #e2e3e5;
-        --cs-message-info-bg: rgba(12, 84, 96, 0.4);
-        --cs-message-info-text: #e2e3e5;
-
-        --cs-comment-bg: #1f2937;
-        --cs-comment-border: #374151;
-        --cs-comment-shadow-hover: rgba(0, 0, 0, 0.2);
-        --cs-comment-meta-color: #9ca3af;
-
-        --cs-pending-bg: rgba(255, 193, 7, 0.15);
-        --cs-pending-badge-bg: #ffc107;
         --cs-pending-badge-text: #000000;
     }
 }
 
-/* Manual Dark Mode Class Support */
+/* Manual dark mode class hook (for sites that toggle theme via class). */
 .dark-mode .comments-system,
 [data-theme="dark"] .comments-system {
     --cs-link-color: #60a5fa;
-    --cs-form-bg: rgba(255, 255, 255, 0.05);
-    --cs-form-border: 1px solid rgba(255, 255, 255, 0.1);
-    --cs-input-bg: #1f2937;
-    --cs-input-border: #374151;
-    --cs-input-text: #f3f4f6;
-    --cs-input-focus-border: #60a5fa;
-    --cs-input-focus-shadow: rgba(96, 165, 250, 0.2);
     --cs-btn-submit-bg: #3b82f6;
-    --cs-btn-submit-text: #ffffff;
     --cs-btn-submit-hover: #2563eb;
     --cs-btn-submit-border: #3b82f6;
-    --cs-btn-cancel-bg: #374151;
-    --cs-btn-cancel-text: #f3f4f6;
-    --cs-btn-cancel-hover: #4b5563;
-    --cs-btn-cancel-border: #4b5563;
-    --cs-btn-reply-color: #60a5fa;
-    --cs-btn-reply-border: #374151;
-    --cs-btn-reply-hover-bg: rgba(255, 255, 255, 0.05);
-    --cs-btn-reaction-color: #6b7280;
-    --cs-btn-reaction-border: #374151;
-    --cs-btn-reaction-hover-bg: rgba(255, 255, 255, 0.05);
     --cs-reaction-heart-color: #f87171;
     --cs-reaction-thumbsup-color: #60a5fa;
     --cs-reaction-lightbulb-color: #fbbf24;
     --cs-reaction-funny-color: #34d399;
-    --cs-message-success-bg: rgba(21, 87, 36, 0.4);
-    --cs-message-success-text: #e2e3e5;
-    --cs-message-error-bg: rgba(114, 28, 36, 0.4);
-    --cs-message-error-text: #e2e3e5;
-    --cs-message-info-bg: rgba(12, 84, 96, 0.4);
-    --cs-message-info-text: #e2e3e5;
-    --cs-comment-bg: #1f2937;
-    --cs-comment-border: #374151;
-    --cs-comment-shadow-hover: rgba(0, 0, 0, 0.2);
-    --cs-comment-meta-color: #9ca3af;
-    --cs-pending-bg: rgba(255, 193, 7, 0.15);
-    --cs-pending-badge-bg: #ffc107;
     --cs-pending-badge-text: #000000;
 }
 
@@ -234,6 +178,14 @@
     outline: none;
     border-color: var(--cs-input-focus-border);
     box-shadow: 0 0 0 3px var(--cs-input-focus-shadow);
+}
+
+.comments-system .form-input:-webkit-autofill,
+.comments-system .form-input:-webkit-autofill:hover,
+.comments-system .form-input:-webkit-autofill:focus {
+    -webkit-text-fill-color: currentColor;
+    caret-color: currentColor;
+    transition: background-color 600000s 0s, color 600000s 0s;
 }
 
 .comments-system .form-textarea {
@@ -524,15 +476,6 @@
     max-width: 100%;
     height: auto;
     border-radius: 4px;
-}
-
-@media (prefers-color-scheme: dark) {
-    .comments-system .comment-content code {
-        background: rgba(255, 255, 255, 0.1);
-    }
-    .comments-system .comment-content blockquote {
-        border-left-color: #555;
-    }
 }
 
 .comments-system .comment-actions {
