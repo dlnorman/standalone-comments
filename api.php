@@ -1402,40 +1402,75 @@ if ($method === 'GET' && $action === 'analytics') {
         }
     }
 
-    // Timeline — daily (last 90 days)
-    $daily = $db->query("
-        SELECT strftime('%Y-%m-%d', created_at) AS period,
-               COUNT(*) AS total,
-               SUM(CASE WHEN status='approved' THEN 1 ELSE 0 END) AS approved,
-               SUM(CASE WHEN status='pending'  THEN 1 ELSE 0 END) AS pending,
-               SUM(CASE WHEN status='spam'     THEN 1 ELSE 0 END) AS spam
-        FROM comments
-        WHERE created_at >= datetime('now', '-90 days')
-        GROUP BY period ORDER BY period ASC
-    ")->fetchAll();
+    // Timelines are gap-filled: every period in the range is emitted, with zeros
+    // for periods that have no comments, so the charts don't collapse empty spans.
+    $totalComments = array_sum($statusTotals);
 
-    // Timeline — weekly (last 52 weeks)
-    $weekly = $db->query("
-        SELECT strftime('%Y-W%W', created_at) AS period,
-               COUNT(*) AS total,
-               SUM(CASE WHEN status='approved' THEN 1 ELSE 0 END) AS approved,
-               SUM(CASE WHEN status='pending'  THEN 1 ELSE 0 END) AS pending,
-               SUM(CASE WHEN status='spam'     THEN 1 ELSE 0 END) AS spam
-        FROM comments
-        WHERE created_at >= datetime('now', '-364 days')
-        GROUP BY period ORDER BY period ASC
-    ")->fetchAll();
+    if ($totalComments === 0) {
+        $daily = $weekly = $monthly = [];
+    } else {
+        // Timeline — daily (last 90 days)
+        $daily = $db->query("
+            WITH RECURSIVE days(day) AS (
+                SELECT date('now', '-89 days')
+                UNION ALL
+                SELECT date(day, '+1 day') FROM days WHERE day < date('now')
+            )
+            SELECT d.day AS period,
+                   COUNT(c.id) AS total,
+                   SUM(CASE WHEN c.status='approved' THEN 1 ELSE 0 END) AS approved,
+                   SUM(CASE WHEN c.status='pending'  THEN 1 ELSE 0 END) AS pending,
+                   SUM(CASE WHEN c.status='spam'     THEN 1 ELSE 0 END) AS spam
+            FROM days d
+            LEFT JOIN comments c
+                   ON strftime('%Y-%m-%d', c.created_at) = d.day
+            GROUP BY d.day ORDER BY d.day ASC
+        ")->fetchAll();
 
-    // Timeline — monthly (all time)
-    $monthly = $db->query("
-        SELECT strftime('%Y-%m', created_at) AS period,
-               COUNT(*) AS total,
-               SUM(CASE WHEN status='approved' THEN 1 ELSE 0 END) AS approved,
-               SUM(CASE WHEN status='pending'  THEN 1 ELSE 0 END) AS pending,
-               SUM(CASE WHEN status='spam'     THEN 1 ELSE 0 END) AS spam
-        FROM comments
-        GROUP BY period ORDER BY period ASC
-    ")->fetchAll();
+        // Timeline — weekly (last 52 weeks)
+        $weekly = $db->query("
+            WITH RECURSIVE days(day) AS (
+                SELECT date('now', '-364 days')
+                UNION ALL
+                SELECT date(day, '+1 day') FROM days WHERE day < date('now')
+            ),
+            weeks(period) AS (
+                SELECT DISTINCT strftime('%Y-W%W', day) FROM days
+            )
+            SELECT w.period AS period,
+                   COUNT(c.id) AS total,
+                   SUM(CASE WHEN c.status='approved' THEN 1 ELSE 0 END) AS approved,
+                   SUM(CASE WHEN c.status='pending'  THEN 1 ELSE 0 END) AS pending,
+                   SUM(CASE WHEN c.status='spam'     THEN 1 ELSE 0 END) AS spam
+            FROM weeks w
+            LEFT JOIN comments c
+                   ON strftime('%Y-W%W', c.created_at) = w.period
+                  AND c.created_at >= datetime('now', '-364 days')
+            GROUP BY w.period ORDER BY w.period ASC
+        ")->fetchAll();
+
+        // Timeline — monthly (all time, from first comment onward)
+        $monthly = $db->query("
+            WITH RECURSIVE months(m) AS (
+                SELECT COALESCE(
+                    (SELECT strftime('%Y-%m-01', MIN(created_at)) FROM comments),
+                    strftime('%Y-%m-01', 'now')
+                )
+                UNION ALL
+                SELECT date(m, '+1 month') FROM months
+                 WHERE m < strftime('%Y-%m-01', 'now')
+            )
+            SELECT strftime('%Y-%m', mo.m) AS period,
+                   COUNT(c.id) AS total,
+                   SUM(CASE WHEN c.status='approved' THEN 1 ELSE 0 END) AS approved,
+                   SUM(CASE WHEN c.status='pending'  THEN 1 ELSE 0 END) AS pending,
+                   SUM(CASE WHEN c.status='spam'     THEN 1 ELSE 0 END) AS spam
+            FROM months mo
+            LEFT JOIN comments c
+                   ON strftime('%Y-%m', c.created_at) = strftime('%Y-%m', mo.m)
+            GROUP BY period ORDER BY period ASC
+        ")->fetchAll();
+    }
 
     // Cast all timeline rows to int
     foreach ([$daily, $weekly, $monthly] as &$arr) {
