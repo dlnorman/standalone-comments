@@ -253,16 +253,7 @@ When closed:
 
 In **Admin → Utilities → Settings**, set **Auto-close Comments** to a number of months or years (0 = never). Posts older than that are treated as closed, and the server also rejects new submissions for them.
 
-The widget needs to know each post's publish date. It's read from, in order:
-1. `data-post-date` on the container (the Hugo partial/shortcode set this from `.Date`)
-2. `window.COMMENTS_CONFIG.postDate`
-3. `<meta property="article:published_time">`
-
-Posts with no detectable date are never auto-closed.
-
-```html
-<div id="comments-container" data-page-url="/my-post/" data-post-date="2021-03-15"></div>
-```
+The post's age is taken from the date in its URL path, e.g. `/2006/`, `/2006/05/` or `/2006/05/14/`. The server works this out on its own and ignores any date sent by the browser, so bots posting straight to the API can't get around it. When the URL has only a year, or only a year and month, the post is treated as published on the last day of that period, so it never closes early. Posts whose URLs have no date are never auto-closed.
 
 ---
 

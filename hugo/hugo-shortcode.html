@@ -19,7 +19,6 @@
 <div id="comments-container"
      data-api-url="{{ $apiUrl }}"
      data-page-url="{{ $pageUrl }}"
-     {{- with .Page.Date }}{{ if not .IsZero }} data-post-date="{{ .Format "2006-01-02T15:04:05Z07:00" }}"{{ end }}{{ end }}
      {{- if $closed }} data-closed="true"{{ end }}>
 </div>
 

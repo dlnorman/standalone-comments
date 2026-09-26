@@ -131,12 +131,26 @@ function getInput() {
     return json_decode(file_get_contents('php://input'), true) ?? [];
 }
 
-// Returns true if a post published on $postDate is older than the auto-close threshold.
-// Unknown/unparseable dates, or a threshold of 0, never close.
-function isAutoClosed($db, $postDate) {
-    if (empty($postDate)) return false;
-    $timestamp = strtotime($postDate);
-    if ($timestamp === false) return false;
+// Derives a post's publish date from its URL path (/YYYY/, optionally /MM/ and /DD/).
+// Never trust a date supplied by the browser. Rounds up to the last possible day within
+// the matched precision so a post is never closed early. Returns a timestamp or null.
+function postDateFromUrl($pageUrl) {
+    $path = parse_url($pageUrl, PHP_URL_PATH) ?? '';
+    if (!preg_match('#/((?:19|20)\d{2})(?:/(0[1-9]|1[0-2]))?(?:/(0[1-9]|[12]\d|3[01]))?(?=/|$)#', $path, $m)) {
+        return null;
+    }
+    $year = (int)$m[1];
+    if (empty($m[2])) return mktime(23, 59, 59, 12, 31, $year);
+    $month = (int)$m[2];
+    $day = empty($m[3]) ? (int)date('t', mktime(0, 0, 0, $month, 1, $year)) : (int)$m[3];
+    return mktime(23, 59, 59, $month, $day, $year);
+}
+
+// Returns true if the post at $pageUrl is older than the auto-close threshold.
+// URLs without a date, or a threshold of 0, never close.
+function isAutoClosed($db, $pageUrl) {
+    $timestamp = postDateFromUrl($pageUrl);
+    if ($timestamp === null) return false;
 
     $stmt = $db->query("SELECT key, value FROM settings WHERE key IN ('auto_close_value', 'auto_close_unit')");
     $settings = [];
@@ -605,7 +619,7 @@ if ($method === 'GET' && $action === 'comments') {
     jsonResponse([
         'comments' => $threaded,
         'post_reactions' => $postReactions,
-        'closed' => isAutoClosed($db, $_GET['post_date'] ?? ''),
+        'closed' => isAutoClosed($db, $pageUrl),
         'pagination' => [
             'total' => $total,
             'limit' => $limit,
@@ -728,7 +742,7 @@ if ($method === 'POST' && $action === 'post') {
         jsonResponse(['error' => 'Invalid submission'], 400);
     }
 
-    if (isAutoClosed($db, $input['post_date'] ?? '')) {
+    if (isAutoClosed($db, $pageUrl)) {
         jsonResponse(['error' => 'Comments are closed for this post'], 403);
     }
 
