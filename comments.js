@@ -9,6 +9,7 @@ class CommentSystem {
         this.pageUrl = options.pageUrl || window.location.pathname;
         this.containerId = options.containerId || 'comments-container';
         this.closed = options.closed || false;
+        this.postDate = options.postDate || '';
         this.container = document.getElementById(this.containerId);
 
         if (!this.container) {
@@ -256,6 +257,7 @@ class CommentSystem {
 
         const data = {
             page_url: this.pageUrl,
+            post_date: this.postDate,
             parent_id: form.dataset.parentId || null,
             author_name: authorName,
             author_email: authorEmail,
@@ -310,10 +312,19 @@ class CommentSystem {
 
     async loadComments() {
         try {
-            const response = await fetch(`${this.apiUrl}?action=comments&url=${encodeURIComponent(this.pageUrl)}`);
+            const dateParam = this.postDate ? `&post_date=${encodeURIComponent(this.postDate)}` : '';
+            const response = await fetch(`${this.apiUrl}?action=comments&url=${encodeURIComponent(this.pageUrl)}${dateParam}`);
             const data = await response.json();
 
             if (response.ok) {
+                // Server closes comments on posts older than the admin's auto-close threshold
+                if (data.closed && !this.closed) {
+                    this.closed = true;
+                    const formContainer = document.getElementById('comment-form-container');
+                    if (formContainer) {
+                        formContainer.outerHTML = '<p class="comments-closed">Comments are closed.</p>';
+                    }
+                }
                 this.displayComments(data.comments);
                 const prContainer = document.getElementById('post-reactions-container');
                 if (prContainer && data.post_reactions) {
@@ -534,7 +545,9 @@ function initComments() {
             apiUrl: container.dataset.apiUrl || window.COMMENTS_CONFIG?.apiUrl || '/comments/api.php',
             pageUrl: container.dataset.pageUrl || window.COMMENTS_CONFIG?.pageUrl || window.location.pathname,
             containerId: 'comments-container',
-            closed: container.dataset.closed === 'true' || window.COMMENTS_CONFIG?.closed || false
+            closed: container.dataset.closed === 'true' || window.COMMENTS_CONFIG?.closed || false,
+            postDate: container.dataset.postDate || window.COMMENTS_CONFIG?.postDate
+                || document.querySelector('meta[property="article:published_time"]')?.content || ''
         };
         commentsWidget = new CommentSystem(config);
     }

@@ -249,6 +249,21 @@ When closed:
 - Post reactions continue to work
 - Existing comments are still displayed
 
+### Auto-closing old posts
+
+In **Admin → Utilities → Settings**, set **Auto-close Comments** to a number of months or years (0 = never). Posts older than that are treated as closed, and the server also rejects new submissions for them.
+
+The widget needs to know each post's publish date. It's read from, in order:
+1. `data-post-date` on the container (the Hugo partial/shortcode set this from `.Date`)
+2. `window.COMMENTS_CONFIG.postDate`
+3. `<meta property="article:published_time">`
+
+Posts with no detectable date are never auto-closed.
+
+```html
+<div id="comments-container" data-page-url="/my-post/" data-post-date="2021-03-15"></div>
+```
+
 ---
 
 ## Email Notifications

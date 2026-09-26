@@ -131,6 +131,25 @@ function getInput() {
     return json_decode(file_get_contents('php://input'), true) ?? [];
 }
 
+// Returns true if a post published on $postDate is older than the auto-close threshold.
+// Unknown/unparseable dates, or a threshold of 0, never close.
+function isAutoClosed($db, $postDate) {
+    if (empty($postDate)) return false;
+    $timestamp = strtotime($postDate);
+    if ($timestamp === false) return false;
+
+    $stmt = $db->query("SELECT key, value FROM settings WHERE key IN ('auto_close_value', 'auto_close_unit')");
+    $settings = [];
+    foreach ($stmt->fetchAll() as $row) {
+        $settings[$row['key']] = $row['value'];
+    }
+    $value = (int)($settings['auto_close_value'] ?? 0);
+    $unit = ($settings['auto_close_unit'] ?? 'years') === 'months' ? 'months' : 'years';
+    if ($value <= 0) return false;
+
+    return $timestamp < strtotime("-$value $unit");
+}
+
 function validateEmail($email) {
     return filter_var($email, FILTER_VALIDATE_EMAIL);
 }
@@ -586,6 +605,7 @@ if ($method === 'GET' && $action === 'comments') {
     jsonResponse([
         'comments' => $threaded,
         'post_reactions' => $postReactions,
+        'closed' => isAutoClosed($db, $_GET['post_date'] ?? ''),
         'pagination' => [
             'total' => $total,
             'limit' => $limit,
@@ -706,6 +726,10 @@ if ($method === 'POST' && $action === 'post') {
     // Honeypot check - if filled, it's likely a bot
     if (!empty($honeypot)) {
         jsonResponse(['error' => 'Invalid submission'], 400);
+    }
+
+    if (isAutoClosed($db, $input['post_date'] ?? '')) {
+        jsonResponse(['error' => 'Comments are closed for this post'], 403);
     }
 
     // Validation
@@ -1938,7 +1962,7 @@ if ($method === 'GET' && $action === 'get_settings') {
         jsonResponse(['error' => 'Unauthorized'], 401);
     }
 
-    $keys = ['require_moderation', 'enable_notifications', 'admin_email'];
+    $keys = ['require_moderation', 'enable_notifications', 'admin_email', 'auto_close_value', 'auto_close_unit'];
     $settings = [];
     foreach ($keys as $key) {
         $stmt = $db->prepare("SELECT value FROM settings WHERE key = ?");
@@ -1962,7 +1986,7 @@ if ($method === 'POST' && $action === 'save_settings') {
         jsonResponse(['error' => 'Invalid CSRF token'], 403);
     }
 
-    $allowed = ['require_moderation', 'enable_notifications', 'admin_email'];
+    $allowed = ['require_moderation', 'enable_notifications', 'admin_email', 'auto_close_value', 'auto_close_unit'];
     $stmt = $db->prepare("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)");
 
     foreach ($allowed as $key) {
@@ -1973,6 +1997,12 @@ if ($method === 'POST' && $action === 'save_settings') {
             }
             if ($key === 'admin_email' && !empty($value) && !filter_var($value, FILTER_VALIDATE_EMAIL)) {
                 jsonResponse(['error' => 'Invalid email address'], 400);
+            }
+            if ($key === 'auto_close_value') {
+                $value = (string)max(0, (int)$value);
+            }
+            if ($key === 'auto_close_unit' && !in_array($value, ['months', 'years'], true)) {
+                jsonResponse(['error' => 'Invalid auto-close unit'], 400);
             }
             $stmt->execute([$key, $value]);
         }

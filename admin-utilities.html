@@ -71,6 +71,14 @@
             font-size: 1rem;
         }
 
+        input[type="number"],
+        select {
+            padding: 0.5rem;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 1rem;
+        }
+
         .btn {
             padding: 0.75rem 1.5rem;
             border: none;
@@ -358,6 +366,19 @@
                                     <span class="toggle-slider"></span>
                                 </label>
                             </div>
+                            <div class="setting-row">
+                                <div class="setting-label">
+                                    <strong>Auto-close Comments</strong>
+                                    <span>Hide the comment form on posts older than this (0 = never). Existing comments still display.</span>
+                                </div>
+                                <div style="display: flex; gap: 0.5rem; align-items: center;">
+                                    <input type="number" id="setting-auto-close-value" min="0" step="1" value="0" style="width: 5rem;">
+                                    <select id="setting-auto-close-unit">
+                                        <option value="months">months</option>
+                                        <option value="years">years</option>
+                                    </select>
+                                </div>
+                            </div>
                             <div class="setting-row" style="flex-direction: column; align-items: flex-start; gap: 0.5rem;">
                                 <div class="setting-label">
                                     <strong>Admin Email</strong>
@@ -556,12 +577,16 @@
                 document.getElementById('setting-require-moderation').checked = (s.require_moderation === 'true');
                 document.getElementById('setting-enable-notifications').checked = (s.enable_notifications === 'true');
                 document.getElementById('setting-admin-email').value = s.admin_email || '';
+                document.getElementById('setting-auto-close-value').value = s.auto_close_value || '0';
+                document.getElementById('setting-auto-close-unit').value = s.auto_close_unit || 'years';
             } catch (e) { console.error('Settings load failed', e); }
         }
 
         // Auto-save toggles on change
         document.getElementById('setting-require-moderation').addEventListener('change', saveSettings);
         document.getElementById('setting-enable-notifications').addEventListener('change', saveSettings);
+        document.getElementById('setting-auto-close-value').addEventListener('change', saveSettings);
+        document.getElementById('setting-auto-close-unit').addEventListener('change', saveSettings);
 
         async function saveSettings() {
             const msgEl = document.getElementById('settings-message');
@@ -571,6 +596,8 @@
                 require_moderation: document.getElementById('setting-require-moderation').checked ? 'true' : 'false',
                 enable_notifications: document.getElementById('setting-enable-notifications').checked ? 'true' : 'false',
                 admin_email: document.getElementById('setting-admin-email').value.trim(),
+                auto_close_value: document.getElementById('setting-auto-close-value').value,
+                auto_close_unit: document.getElementById('setting-auto-close-unit').value,
             };
             try {
                 const r = await fetch(`${API_URL}?action=save_settings`, {
