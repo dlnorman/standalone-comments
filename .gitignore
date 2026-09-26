@@ -13,3 +13,4 @@ logs/
 # Local development files
 .DS_Store
 dev.marker
+.playwright-mcp/
